@@ -28,7 +28,29 @@ class Dataloader():
     # return the subsets that we just generated
     def get_subsets(self):
         return tf.cast(self.x_train_subset, dtype=tf.float32), tf.cast(self.y_train_subset, dtype=tf.float32), tf.cast(self.x_test_subset, dtype=tf.float32), tf.cast(self.y_test_subset, dtype=tf.float32)
+    
+    def generate_labeled_unlabeled_indices(self, data, split_rate=0.5):
+        # getting the number of samples
+        num_samples = len(data)
+        rng = np.random.default_rng()
+        # randomly choosing indices that are the percentage of the splitrate
+        labeled_indices = rng.choice(
+            np.arange(num_samples), 
+            int(num_samples * split_rate), 
+            replace=False)
+        
+        # getting the other indices that are not a part of the labeled
+        unlabeled_indices = np.nonzero(
+            np.isin(np.arange(num_samples), labeled_indices, invert=True))[0]
+        
+        # print(f'{num_samples=}')
+        # print(f'{labeled_indices.shape=}')
+        # print(f'{unlabeled_indices.shape=}')
 
+        # returning the indices for labeld and unlabeled
+        return labeled_indices, unlabeled_indices 
+
+        
     # preprocessing the data, normalizing all the values
     def preprocess(self):
         self.x_train = self.x_train / 255.
@@ -50,6 +72,7 @@ if __name__ == '__main__':
     dataloader.preprocess()
     dataloader.generate_subsets()
     x_train_subset, y_train_subset, x_test_subset, y_test_subset = dataloader.get_subsets()
+    dataloader.generate_labeled_unlabeled_indices(x_train_subset, 0.321)
     #print(f'{x_train_subset.shape=}')
 
     

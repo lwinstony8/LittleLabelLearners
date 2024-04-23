@@ -2,6 +2,7 @@ import keras
 from keras import ops
 from keras import layers
 import math
+
 # Distorts the color distibutions of images
 class RandomColorAffine(layers.Layer):
     def __init__(self, brightness=0, jitter=0, **kwargs):
@@ -49,7 +50,7 @@ def get_augmenter(min_area, brightness, jitter):
     zoom_factor = 1.0 - math.sqrt(min_area)
     return keras.Sequential(
         [
-            layers.Rescaling(1 / 255),
+            #layers.Rescaling(1 / 255),
             layers.RandomFlip("horizontal"),
             layers.RandomTranslation(zoom_factor / 2, zoom_factor / 2),
             layers.RandomZoom((-zoom_factor, 0.0), (-zoom_factor, 0.0)),
