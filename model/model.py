@@ -27,7 +27,6 @@ from data.dataloader import Dataloader, download_data
 
 train, test = download_data()
 my_dataloader = Dataloader(train, test)
-print(my_dataloader.x_train)
 
 # Dataset hyperparameters
 unlabeled_dataset_size = 100000
@@ -106,7 +105,8 @@ def visualize_augmentations(num_images):
     for column, image_row in enumerate(augmented_images):
         for row, image in enumerate(image_row):
             plt.subplot(4, num_images, row * num_images + column + 1)
-            plt.imshow(image)
+            # plt.imshow(image)
+            plt.savefig('figure.png')
             if column == 0:
                 plt.title(row_titles[row], loc="left")
             plt.axis("off")
