@@ -3,6 +3,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
+# Dataset hyperparameters
+unlabeled_dataset_size = 100000
+labeled_dataset_size = 5000
+image_channels = 3
+
+# Algorithm hyperparameters
+num_epochs = 20
+batch_size = 525  # Corresponds to 200 steps per epoch
+width = 128
+temperature = 0.1
 # dataloader class used to load in all our data
 class Dataloader():
 
@@ -10,6 +20,12 @@ class Dataloader():
     def __init__(self, train, test):
         self.x_train, self.y_train = train
         self.x_test, self.y_test = test
+
+        # num_classes refers to the ceiling amount of distinct classes to learn
+        # theoretically, should be very high; for testing purposes, we will set it to 10
+        # since we know the world (i.e. CIFAR10 dataset) only has 10 objects
+        self.num_classes = len(np.unique(self.y_train))
+        
         #print(f'{self.x_train.shape=}')
 
     # method to get the subsets of the labels
@@ -55,6 +71,71 @@ class Dataloader():
     def preprocess(self):
         self.x_train = self.x_train / 255.
         self.x_test = self.x_test / 255.
+
+    def prepare_dataset(self, x_train, y_train, x_test, y_test):
+        # Labeled and unlabeled samples are loaded synchronously
+        # with batch sizes selected accordingly
+        steps_per_epoch = (unlabeled_dataset_size + labeled_dataset_size) // batch_size
+        unlabeled_batch_size = unlabeled_dataset_size // steps_per_epoch
+        labeled_batch_size = labeled_dataset_size // steps_per_epoch
+        print(
+            f"batch size is {unlabeled_batch_size} (unlabeled) + {labeled_batch_size} (labeled)"
+        )
+        # getting the indices for out labeled and unlabeled data
+        train_x_labeled_idx, train_x_unlabeled_idx = self.generate_labeled_unlabeled_indices(x_train)
+
+        # getting the unlable
+        unlabeled_train_dataset = x_train[train_x_unlabeled_idx]
+        unlabeled_train_dataset = (
+            tf.data.Dataset.from_tensor_slices(unlabeled_train_dataset)\
+            # .shuffle()
+            .batch(unlabeled_batch_size))
+        
+        #
+        train_x_labeled = x_train[train_x_labeled_idx]
+        train_y_labeled = y_train[train_x_labeled_idx]
+        
+        # labeled_train_dataset = (
+        #     tf.data.Dataset.from_tensor_slices((train_x_labeled, self.one_hot(train_y_labeled)))
+        #     # .shuffle()
+        #     .batch(labeled_batch_size)
+        # )
+
+        # test_dataset = (
+        #     tf.data.Dataset.from_tensor_slices((x_test, self.one_hot(y_test)))
+        #     # .shuffle()
+        #     .batch(batch_size)
+        # )
+
+        labeled_train_dataset = (
+            tf.data.Dataset.from_tensor_slices((train_x_labeled, train_y_labeled))
+            # .shuffle()
+            .batch(labeled_batch_size)
+        )
+
+        test_dataset = (
+            tf.data.Dataset.from_tensor_slices((x_test, y_test))
+            # .shuffle()
+            .batch(batch_size)
+        )
+
+        # Labeled and unlabeled datasets are zipped together
+        train_dataset = tf.data.Dataset.zip(
+            (unlabeled_train_dataset, labeled_train_dataset)
+        )
+        # prefetch if we need to
+
+        # train_dataset in tuple of itself to match
+        return train_dataset, labeled_train_dataset, test_dataset
+    
+    # method that one_hot encodes the labels for a non specific 
+    def one_hot(self, labels):
+        #print(f"{labels.shape=}")
+        encoded = tf.one_hot(labels, depth=self.num_classes)
+        encoded = tf.squeeze(encoded)
+        print(f'{encoded.shape=}')
+        return encoded
+
 
     
 
