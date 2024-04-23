@@ -226,19 +226,6 @@ class ContrastiveModel(keras.Model):
 
 # Contrastive pretraining
 pretraining_model = ContrastiveModel()
-pretraining_model.compile(
-    contrastive_optimizer=keras.optimizers.Adam(),
-    probe_optimizer=keras.optimizers.Adam(),
-)
-
-pretraining_history = pretraining_model.fit(
-    train_dataset, epochs=num_epochs, validation_data=test_dataset
-)
-print(
-    "Maximal validation accuracy: {:.2f}%".format(
-        max(pretraining_history.history["val_p_acc"]) * 100
-    )
-)
 
 # Supervised finetuning of the pretrained encoder
 finetuning_model = keras.Sequential(
