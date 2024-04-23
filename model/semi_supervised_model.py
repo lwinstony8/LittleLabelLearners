@@ -134,18 +134,16 @@ def visualize_augmentations(num_images):
         images,
         get_augmenter(**classification_augmentation)(images),
         get_augmenter(**contrastive_augmentation)(images),
-        get_augmenter(**contrastive_augmentation)(images),
     )
     row_titles = [
         "Original:",
         "Weakly augmented:",
         "Strongly augmented:",
-        "Strongly augmented:",
     ]
     plt.figure(figsize=(num_images * 2.2, 4 * 2.2), dpi=100)
     for column, image_row in enumerate(augmented_images):
         for row, image in enumerate(image_row):
-            plt.subplot(4, num_images, row * num_images + column + 1)
+            plt.subplot(3, num_images, row * num_images + column + 1)
             plt.imshow(image)
             plt.savefig('figure.png')
             if column == 0:
@@ -154,9 +152,9 @@ def visualize_augmentations(num_images):
     plt.tight_layout()
 
 
-visualize_augmentations(num_images=8)
+# visualize_augmentations(num_images=8)
 
-'''
+
 # Define the encoder architecture
 def get_encoder():
     return keras.Sequential(
@@ -194,4 +192,4 @@ print(
     "Maximal validation accuracy: {:.2f}%".format(
         max(baseline_history.history["val_acc"]) * 100
     )
-)'''
+)
