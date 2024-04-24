@@ -3,3 +3,8 @@
 
 ## Developers
 Winston Li, JR Byers, Marcel Mateos-Salles
+
+## Setup commands
+python -m venv venv
+To activate: source venv/bin/activate
+pip install -r requirements.txt
