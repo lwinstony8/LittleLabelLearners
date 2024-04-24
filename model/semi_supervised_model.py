@@ -18,6 +18,9 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 # import tensorflow_datasets as tfds
 
+# NOTE: apparently keras and tf.keras are distinct
+# When pip installing Keras, there appears to be some dependency issues
+# However, running this model (and supervised_finetuned_model) does not throw any errors
 import keras
 from keras import ops
 from keras import layers
@@ -240,26 +243,3 @@ print(
     )
 )
 
-# Supervised finetuning of the pretrained encoder
-finetuning_model = keras.Sequential(
-    [
-        get_augmenter(**classification_augmentation),
-        pretraining_model.encoder,
-        layers.Dense(10),
-    ],
-    name="finetuning_model",
-)
-finetuning_model.compile(
-    optimizer=keras.optimizers.Adam(),
-    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-    metrics=[keras.metrics.SparseCategoricalAccuracy(name="acc")],
-)
-
-finetuning_history = finetuning_model.fit(
-    labeled_train_dataset, epochs=num_epochs, validation_data=test_dataset
-)
-print(
-    "Maximal validation accuracy: {:.2f}%".format(
-        max(finetuning_history.history["val_acc"]) * 100
-    )
-)
