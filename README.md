@@ -8,3 +8,6 @@ Winston Li, JR Byers, Marcel Mateos-Salles
 python -m venv venv
 To activate: source venv/bin/activate
 pip install -r requirements.txt
+
+To run app container
+runapptainer
