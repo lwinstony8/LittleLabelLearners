@@ -18,9 +18,6 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 # import tensorflow_datasets as tfds
 
-# NOTE: apparently keras and tf.keras are distinct
-# When pip installing Keras, there appears to be some dependency issues
-# However, running this model (and supervised_finetuned_model) does not throw any errors
 import keras
 from keras import ops
 from keras import layers
@@ -49,17 +46,40 @@ my_dataloader.generate_subsets()
 
 # y_train_onehot, y_test_onehot = my_dataloader.one_hot(my_dataloader.y_train, my_dataloader.y_test)
 
-# Load STL10 dataset
+
+# Full Train/Test data
 train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
     my_dataloader.x_train, 
     my_dataloader.y_train, 
     my_dataloader.x_test, 
     my_dataloader.y_test)
 
-# print(f'{labeled_train_dataset=}')
-# print(f'{test_dataset=}')
-# exit()
 
+'''
+# Subset Train; Full Test data
+train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+    my_dataloader.x_train_subset, 
+    my_dataloader.y_train_subset, 
+    my_dataloader.x_test, 
+    my_dataloader.y_test)
+'''
+
+'''
+# Subset Train/Test data
+train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+    my_dataloader.x_train_subset, 
+    my_dataloader.y_train_subset, 
+    my_dataloader.x_test_subset, 
+    my_dataloader.y_test_subset)
+'''
+'''
+# Full Train; Subset Test data
+train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+    my_dataloader.x_train, 
+    my_dataloader.y_train, 
+    my_dataloader.x_test_subset, 
+    my_dataloader.y_test_subset)
+'''
 # Define the encoder architecture
 def get_encoder():
     return keras.Sequential(
@@ -229,17 +249,27 @@ class ContrastiveModel(keras.Model):
 
 # Contrastive pretraining
 pretraining_model = ContrastiveModel()
-pretraining_model.compile(
-    contrastive_optimizer=keras.optimizers.Adam(),
-    probe_optimizer=keras.optimizers.Adam(),
+
+# Supervised finetuning of the pretrained encoder
+finetuning_model = keras.Sequential(
+    [
+        get_augmenter(**classification_augmentation),
+        pretraining_model.encoder,
+        layers.Dense(10),
+    ],
+    name="finetuning_model",
+)
+finetuning_model.compile(
+    optimizer=keras.optimizers.Adam(),
+    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=[keras.metrics.SparseCategoricalAccuracy(name="acc")],
 )
 
-pretraining_history = pretraining_model.fit(
-    train_dataset, epochs=num_epochs, validation_data=test_dataset
+finetuning_history = finetuning_model.fit(
+    labeled_train_dataset, epochs=num_epochs, validation_data=test_dataset
 )
 print(
     "Maximal validation accuracy: {:.2f}%".format(
-        max(pretraining_history.history["val_p_acc"]) * 100
+        max(finetuning_history.history["val_acc"]) * 100
     )
 )
-
