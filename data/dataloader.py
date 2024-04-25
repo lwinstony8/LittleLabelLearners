@@ -25,6 +25,10 @@ class Dataloader():
         # theoretically, should be very high; for testing purposes, we will set it to 10
         # since we know the world (i.e. CIFAR10 dataset) only has 10 objects
         self.num_classes = len(np.unique(self.y_train))
+
+        self.train_dataset = None
+        self.labeled_train_dataset = None
+        self.test_dataset = None
         
         #print(f'{self.x_train.shape=}')
 
@@ -124,9 +128,11 @@ class Dataloader():
             (unlabeled_train_dataset, labeled_train_dataset)
         )
         # prefetch if we need to
-
         # train_dataset in tuple of itself to match
-        return train_dataset, labeled_train_dataset, test_dataset
+        self.train_dataset=train_dataset
+        self.labeled_train_dataset=labeled_train_dataset
+        self.test_dataset=test_dataset
+        # return train_dataset, labeled_train_dataset, test_dataset
     
     # method that one_hot encodes the labels for a non specific 
     def one_hot(self, labels):
