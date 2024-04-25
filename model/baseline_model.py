@@ -46,12 +46,40 @@ my_dataloader.generate_subsets()
 
 # y_train_onehot, y_test_onehot = my_dataloader.one_hot(my_dataloader.y_train, my_dataloader.y_test)
 
-# Load STL10 dataset
+
+'''
+# Full Train/Test data
 train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
     my_dataloader.x_train, 
     my_dataloader.y_train, 
     my_dataloader.x_test, 
     my_dataloader.y_test)
+'''
+
+'''
+# Subset Train; Full Test data
+train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+    my_dataloader.x_train_subset, 
+    my_dataloader.y_train_subset, 
+    my_dataloader.x_test, 
+    my_dataloader.y_test)
+'''
+
+'''
+# Subset Train/Test data
+train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+    my_dataloader.x_train_subset, 
+    my_dataloader.y_train_subset, 
+    my_dataloader.x_test_subset, 
+    my_dataloader.y_test_subset)
+'''
+
+# Full Train; Subset Test data
+train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+    my_dataloader.x_train, 
+    my_dataloader.y_train, 
+    my_dataloader.x_test_subset, 
+    my_dataloader.y_test_subset)
 
 # print(f'{labeled_train_dataset=}')
 # print(f'{test_dataset=}')
@@ -115,8 +143,8 @@ baseline_model = keras.Sequential(
 )
 baseline_model.compile(
     optimizer=keras.optimizers.Adam(),
-    loss=keras.losses.CategoricalCrossentropy(from_logits=True),
-    metrics=[keras.metrics.CategoricalAccuracy(name="acc")],
+    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=[keras.metrics.SparseCategoricalAccuracy(name="acc")],
 )
 
 baseline_history = baseline_model.fit(

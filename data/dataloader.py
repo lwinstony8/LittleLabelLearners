@@ -39,7 +39,7 @@ class Dataloader():
         self.x_train_subset = self.x_train[subset_labels_train_indices]
         self.y_train_subset = self.y_train[subset_labels_train_indices]
         self.x_test_subset = self.x_test[subset_labels_test_indices]
-        self.y_test_subset = self.x_test[subset_labels_test_indices]
+        self.y_test_subset = self.y_test[subset_labels_test_indices]
     
     # return the subsets that we just generated
     def get_subsets(self):
