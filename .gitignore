@@ -9,3 +9,4 @@ data/.ipynb_checkpoints
 **.pyc
 data
 venv/
+checkpoints/

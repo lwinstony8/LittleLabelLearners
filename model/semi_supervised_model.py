@@ -33,7 +33,7 @@ classification_augmentation = {
     "jitter": 0.1,
 }
 # Algorithm hyperparameters
-num_epochs = 20
+num_epochs = 5
 batch_size = 525  # Corresponds to 200 steps per epoch
 width = 128
 temperature = 0.1
@@ -95,6 +95,7 @@ def get_encoder():
     )
 
 # Define the contrastive model with model-subclassing
+@keras.saving.register_keras_serializable()
 class ContrastiveModel(keras.Model):
     def __init__(self):
         super().__init__()
@@ -248,6 +249,7 @@ class ContrastiveModel(keras.Model):
 
 
 # Contrastive pretraining
+#"""
 pretraining_model = ContrastiveModel()
 
 # Supervised finetuning of the pretrained encoder
@@ -272,4 +274,20 @@ print(
     "Maximal validation accuracy: {:.2f}%".format(
         max(finetuning_history.history["val_acc"]) * 100
     )
+
 )
+
+# save weights
+pretraining_model.save_weights('../checkpoints/pretraining_model.weights.h5')
+print("done saving model")
+
+# Code for loading a new model
+model2 = ContrastiveModel()
+model2.compile(
+    contrastive_optimizer=keras.optimizers.Adam(),
+    probe_optimizer=keras.optimizers.Adam(),
+)
+model2.load_weights('../checkpoints/pretraining_model.weights.h5')
+
+
+
