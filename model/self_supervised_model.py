@@ -13,8 +13,6 @@ import resource
 low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
-import math
-import matplotlib.pyplot as plt
 import tensorflow as tf
 # import tensorflow_datasets as tfds
 
@@ -27,25 +25,22 @@ from keras import layers
 
 from augmentations import RandomColorAffine, get_augmenter
 from data.dataloader import Dataloader, download_data
+import hyperparameters as hp
 
-# Stronger augmentations for contrastive, weaker ones for supervised training
-contrastive_augmentation = {"min_area": 0.25, "brightness": 0.6, "jitter": 0.2}
-classification_augmentation = {
-    "min_area": 0.75,
-    "brightness": 0.3,
-    "jitter": 0.1,
-}
-# Algorithm hyperparameters
-num_epochs = 20
-batch_size = 525  # Corresponds to 200 steps per epoch
-width = 128
-temperature = 0.1
+# # Stronger augmentations for contrastive, weaker ones for supervised training
+# contrastive_augmentation = {"min_area": 0.25, "brightness": 0.6, "jitter": 0.2}
+# classification_augmentation = {
+#     "min_area": 0.75,
+#     "brightness": 0.3,
+#     "jitter": 0.1,
+# }
+# # Algorithm hyperparameters
+# num_epochs = 20
+# batch_size = 525  # Corresponds to 200 steps per epoch
+# width = 128
+# temperature = 0.1
 
-train, test = download_data()
-my_dataloader = Dataloader(train, test)
 
-my_dataloader.preprocess()
-my_dataloader.generate_subsets()
 
 # y_train_onehot, y_test_onehot = my_dataloader.one_hot(my_dataloader.y_train, my_dataloader.y_test)
 
@@ -79,52 +74,49 @@ train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_datas
 
 # # Train-subset data
 # # full and 7
-train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-    my_dataloader.x_train, 
-    my_dataloader.y_train, 
-    my_dataloader.x_test_subset, 
-    my_dataloader.y_test_subset)
+# train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
+#     my_dataloader.x_train, 
+#     my_dataloader.y_train, 
+#     my_dataloader.x_test_subset, 
+#     my_dataloader.y_test_subset)
 
 
 # print(f'{labeled_train_dataset=}')
 # print(f'{test_dataset=}')
 # exit()
 
-# Define the encoder architecture
-def get_encoder():
-    return keras.Sequential(
-        [
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Flatten(),
-            layers.Dense(width, activation="relu"),
-        ],
-        name="encoder",
-    )
 
 # Define the contrastive model with model-subclassing
 class ContrastiveModel(keras.Model):
     def __init__(self):
         super().__init__()
 
-        self.temperature = temperature
-        self.contrastive_augmenter = get_augmenter(**contrastive_augmentation)
-        self.classification_augmenter = get_augmenter(**classification_augmentation)
-        self.encoder = get_encoder()
+        self.temperature = hp.temperature
+        self.contrastive_augmenter = get_augmenter(**hp.contrastive_augmentation)
+        self.classification_augmenter = get_augmenter(**hp.classification_augmentation)
+        self.encoder = keras.Sequential(
+            [
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
+                layers.Flatten(),
+                layers.Dense(hp.width, activation="relu"),
+            ],
+            name="encoder",
+        )
         # Non-linear MLP as projection head
         self.projection_head = keras.Sequential(
             [
-                keras.Input(shape=(width,)),
-                layers.Dense(width, activation="relu"),
-                layers.Dense(width),
+                keras.Input(shape=(hp.width,)),
+                layers.Dense(hp.width, activation="relu"),
+                layers.Dense(hp.width),
             ],
             name="projection_head",
         )
         # Single dense layer for linear probing
         self.linear_probe = keras.Sequential(
-            [layers.Input(shape=(width,)), layers.Dense(10)],
+            [layers.Input(shape=(hp.width,)), layers.Dense(10)],
             name="linear_probe",
         )
 
@@ -257,19 +249,32 @@ class ContrastiveModel(keras.Model):
         return {m.name: m.result() for m in self.metrics[2:]}
 
 
-# Contrastive pretraining
-pretraining_model = ContrastiveModel()
-pretraining_model.compile(
-    contrastive_optimizer=keras.optimizers.Adam(),
-    probe_optimizer=keras.optimizers.Adam(),
-)
 
-pretraining_history = pretraining_model.fit(
-    train_dataset, epochs=num_epochs, validation_data=test_dataset
-)
-print(
-    "Maximal validation accuracy: {:.2f}%".format(
-        max(pretraining_history.history["val_p_acc"]) * 100
+
+if __name__ == '__main__':
+    train, test = download_data()
+    my_dataloader = Dataloader(train, test)
+
+    my_dataloader.preprocess()
+    my_dataloader.generate_subsets()
+    my_dataloader.prepare_dataset(
+        my_dataloader.x_train_subset, 
+        my_dataloader.y_train_subset, 
+        my_dataloader.x_test, 
+        my_dataloader.y_test)
+
+    # Contrastive pretraining
+    pretraining_model = ContrastiveModel()
+    pretraining_model.compile(
+        contrastive_optimizer=keras.optimizers.Adam(),
+        probe_optimizer=keras.optimizers.Adam(),
     )
-)
 
+    pretraining_history = pretraining_model.fit(
+        my_dataloader.train_dataset, epochs=hp.num_epochs, validation_data=my_dataloader.test_dataset
+    )
+    print(
+        "Maximal validation accuracy: {:.2f}%".format(
+            max(pretraining_history.history["val_p_acc"]) * 100
+        )
+    )

@@ -1,10 +1,9 @@
 import os
+os.environ["KERAS_BACKEND"] = "tensorflow"
 
 import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-
-os.environ["KERAS_BACKEND"] = "tensorflow"
 
 
 # Make sure we are able to handle large datasets
@@ -13,16 +12,13 @@ import resource
 low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
-import math
-import matplotlib.pyplot as plt
 import tensorflow as tf
-# import tensorflow_datasets as tfds
 
 import keras
 from keras import ops
 from keras import layers
 
-from augmentations import RandomColorAffine, get_augmenter
+from augmentations import get_augmenter
 from data.dataloader import Dataloader, download_data
 
 # Stronger augmentations for contrastive, weaker ones for supervised training
