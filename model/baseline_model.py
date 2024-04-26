@@ -88,12 +88,17 @@ class BaselineModel(keras.Model):
 if __name__ == '__main__':
     # TODO: parseargs; check if we want scheduled subset; set base_num_classes...
     train, test = download_data()
+
     my_baseline_model = BaselineModel(train, test)
     my_baseline_model.compile(
         optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         metrics=[keras.metrics.SparseCategoricalAccuracy(name="acc")], 
     )
+
+    # TODO: Write our own train/test to take in indices instead of dataset objects
+    # Therefore, we can use the same original data object, but only calculate 
+    # indices to access existing objects
     baseline_logs = my_baseline_model.fit(
         my_baseline_model.dataloader.labeled_train_dataset, 
         epochs=hp.num_epochs, 

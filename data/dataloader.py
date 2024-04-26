@@ -24,7 +24,7 @@ class Dataloader():
         # num_classes refers to the ceiling amount of distinct classes to learn
         # theoretically, should be very high; for testing purposes, we will set it to 10
         # since we know the world (i.e. CIFAR10 dataset) only has 10 objects
-        self.num_classes = len(np.unique(self.y_train))
+        self.num_classes = len(np.unique(self.y_test))
 
         self.train_dataset = None
         self.labeled_train_dataset = None
@@ -35,6 +35,7 @@ class Dataloader():
     # method to get the subsets of the labels
     def generate_subsets(self, subset_size=7):
         # creating the range of the labels that we want to select for
+
         subset_labels = np.arange(subset_size)
         subset_labels_train_indices = np.nonzero(np.isin(self.y_train, subset_labels))[0]
         subset_labels_test_indices = np.nonzero(np.isin(self.y_test, subset_labels))[0]
@@ -46,6 +47,8 @@ class Dataloader():
         self.y_test_subset = self.y_test[subset_labels_test_indices]
     
     # return the subsets that we just generated
+
+    # TODO: we only ever use this in visualizations.py; is this a problem??
     def get_subsets(self):
         return tf.cast(self.x_train_subset, dtype=tf.float32), tf.cast(self.y_train_subset, dtype=tf.float32), tf.cast(self.x_test_subset, dtype=tf.float32), tf.cast(self.y_test_subset, dtype=tf.float32)
     
@@ -134,6 +137,7 @@ class Dataloader():
         self.test_dataset=test_dataset
         # return train_dataset, labeled_train_dataset, test_dataset
     
+    '''
     # method that one_hot encodes the labels for a non specific 
     def one_hot(self, labels):
         #print(f"{labels.shape=}")
@@ -141,7 +145,7 @@ class Dataloader():
         encoded = tf.squeeze(encoded)
         print(f'{encoded.shape=}')
         return encoded
-
+    '''
 
     
 
