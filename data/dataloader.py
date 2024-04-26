@@ -86,7 +86,7 @@ class Dataloader():
         unlabeled_batch_size = unlabeled_dataset_size // steps_per_epoch
         labeled_batch_size = labeled_dataset_size // steps_per_epoch
         print(
-            f"batch size is {unlabeled_batch_size} (unlabeled) + {labeled_batch_size} (labeled)"
+            f"Batch size is: {unlabeled_batch_size} (unlabeled) + {labeled_batch_size} (labeled)"  
         )
         # getting the indices for out labeled and unlabeled data
         train_x_labeled_idx, train_x_unlabeled_idx = self.generate_labeled_unlabeled_indices(x_train)

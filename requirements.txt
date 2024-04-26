@@ -1,2 +1,4 @@
 matplotlib
 keras -U
+tensorflow_datasets
+tensorflow_transform

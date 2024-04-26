@@ -4,6 +4,7 @@ data/cifar10
 data/__pycache__
 data/.ipynb_checkpoints
 
+*.nfs
 *.simg
 .vscode
 **.pyc
