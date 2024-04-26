@@ -135,7 +135,7 @@ class Dataloader():
         self.train_dataset=train_dataset
         self.labeled_train_dataset=labeled_train_dataset
         self.test_dataset=test_dataset
-        # return train_dataset, labeled_train_dataset, test_dataset
+        return train_dataset, labeled_train_dataset, test_dataset
     
     '''
     # method that one_hot encodes the labels for a non specific 

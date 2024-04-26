@@ -14,82 +14,23 @@ low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
 import tensorflow as tf
-# import tensorflow_datasets as tfds
 
-# NOTE: apparently keras and tf.keras are distinct
-# When pip installing Keras, there appears to be some dependency issues
-# However, running this model (and supervised_finetuned_model) does not throw any errors
+
 import keras
 from keras import ops
 from keras import layers
 
-from augmentations import RandomColorAffine, get_augmenter
+from augmentations import get_augmenter
 from data.dataloader import Dataloader, download_data
 import hyperparameters as hp
-
-# # Stronger augmentations for contrastive, weaker ones for supervised training
-# contrastive_augmentation = {"min_area": 0.25, "brightness": 0.6, "jitter": 0.2}
-# classification_augmentation = {
-#     "min_area": 0.75,
-#     "brightness": 0.3,
-#     "jitter": 0.1,
-# }
-# # Algorithm hyperparameters
-# num_epochs = 20
-# batch_size = 525  # Corresponds to 200 steps per epoch
-# width = 128
-# temperature = 0.1
-
-
-
-# y_train_onehot, y_test_onehot = my_dataloader.one_hot(my_dataloader.y_train, my_dataloader.y_test)
-
-'''
-# # Complete data
-# full and full
-train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-    my_dataloader.x_train, 
-    my_dataloader.y_train, 
-    my_dataloader.x_test, 
-    my_dataloader.y_test)
-'''
-
-
-# # Train-subset data
-# # 7 and full
-# train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-#     my_dataloader.x_train_subset, 
-#     my_dataloader.y_train_subset, 
-#     my_dataloader.x_test, 
-#     my_dataloader.y_test)
-
-
-# # Train/Testsubset data
-# # 7 and 7
-# train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-#     my_dataloader.x_train_subset, 
-#     my_dataloader.y_train_subset, 
-#     my_dataloader.x_test_subset, 
-#     my_dataloader.y_test_subset)
-
-# # Train-subset data
-# # full and 7
-# train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-#     my_dataloader.x_train, 
-#     my_dataloader.y_train, 
-#     my_dataloader.x_test_subset, 
-#     my_dataloader.y_test_subset)
-
-
-# print(f'{labeled_train_dataset=}')
-# print(f'{test_dataset=}')
-# exit()
 
 
 # Define the contrastive model with model-subclassing
 class ContrastiveModel(keras.Model):
     def __init__(self):
         super().__init__()
+
+        self.dataloader = Dataloader()
 
         self.temperature = hp.temperature
         self.contrastive_augmenter = get_augmenter(**hp.contrastive_augmentation)
@@ -271,7 +212,9 @@ if __name__ == '__main__':
     )
 
     pretraining_history = pretraining_model.fit(
-        my_dataloader.train_dataset, epochs=hp.num_epochs, validation_data=my_dataloader.test_dataset
+        my_dataloader.train_dataset, 
+        epochs=hp.num_epochs, 
+        validation_data=my_dataloader.test_dataset
     )
     print(
         "Maximal validation accuracy: {:.2f}%".format(
