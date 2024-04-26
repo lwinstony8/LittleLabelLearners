@@ -22,88 +22,39 @@ import keras
 from keras import ops
 from keras import layers
 
-from augmentations import RandomColorAffine, get_augmenter
+from model.augmentations import RandomColorAffine, get_augmenter
 from data.dataloader import Dataloader, download_data
 
-# Stronger augmentations for contrastive, weaker ones for supervised training
-contrastive_augmentation = {"min_area": 0.25, "brightness": 0.6, "jitter": 0.2}
-classification_augmentation = {
-    "min_area": 0.75,
-    "brightness": 0.3,
-    "jitter": 0.1,
-}
-# Algorithm hyperparameters
-num_epochs = 5
-batch_size = 525  # Corresponds to 200 steps per epoch
-width = 128
-temperature = 0.1
 
-train, test = download_data()
-my_dataloader = Dataloader(train, test)
-
-my_dataloader.preprocess()
-my_dataloader.generate_subsets()
-
-# y_train_onehot, y_test_onehot = my_dataloader.one_hot(my_dataloader.y_train, my_dataloader.y_test)
-
-
-# Full Train/Test data
-train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-    my_dataloader.x_train, 
-    my_dataloader.y_train, 
-    my_dataloader.x_test, 
-    my_dataloader.y_test)
-
-
-'''
-# Subset Train; Full Test data
-train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-    my_dataloader.x_train_subset, 
-    my_dataloader.y_train_subset, 
-    my_dataloader.x_test, 
-    my_dataloader.y_test)
-'''
-
-'''
-# Subset Train/Test data
-train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-    my_dataloader.x_train_subset, 
-    my_dataloader.y_train_subset, 
-    my_dataloader.x_test_subset, 
-    my_dataloader.y_test_subset)
-'''
-'''
-# Full Train; Subset Test data
-train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
-    my_dataloader.x_train, 
-    my_dataloader.y_train, 
-    my_dataloader.x_test_subset, 
-    my_dataloader.y_test_subset)
-'''
-# Define the encoder architecture
-def get_encoder():
-    return keras.Sequential(
-        [
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
-            layers.Flatten(),
-            layers.Dense(width, activation="relu"),
-        ],
-        name="encoder",
-    )
-
-# Define the contrastive model with model-subclassing
-@keras.saving.register_keras_serializable()
 class ContrastiveModel(keras.Model):
-    def __init__(self):
+    def __init__(self, num_epochs=5, batch_size=525, width=128, temperature=0.1):
         super().__init__()
+
+        contrastive_augmentation = {
+            "min_area": 0.25, 
+            "brightness": 0.6, 
+            "jitter": 0.2
+        }
+        classification_augmentation = {
+            "min_area": 0.75,
+            "brightness": 0.3,
+            "jitter": 0.1,
+        }
 
         self.temperature = temperature
         self.contrastive_augmenter = get_augmenter(**contrastive_augmentation)
         self.classification_augmenter = get_augmenter(**classification_augmentation)
-        self.encoder = get_encoder()
+        self.encoder = keras.Sequential(
+            [
+                layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(width, kernel_size=3, strides=2, activation="relu"),
+                layers.Flatten(),
+                layers.Dense(width, activation="relu"),
+            ],
+            name="encoder",
+        )
         # Non-linear MLP as projection head
         self.projection_head = keras.Sequential(
             [
@@ -122,6 +73,7 @@ class ContrastiveModel(keras.Model):
         self.encoder.summary()
         self.projection_head.summary()
         self.linear_probe.summary()
+
 
     def compile(self, contrastive_optimizer, probe_optimizer, **kwargs):
         super().compile(**kwargs)
@@ -246,49 +198,3 @@ class ContrastiveModel(keras.Model):
 
         # Only the probe metrics are logged at test time
         return {m.name: m.result() for m in self.metrics[2:]}
-
-
-# Contrastive pretraining
-#"""
-pretraining_model = ContrastiveModel()
-
-# Supervised finetuning of the pretrained encoder
-finetuning_model = keras.Sequential(
-    [
-        get_augmenter(**classification_augmentation),
-        pretraining_model.encoder,
-        layers.Dense(10),
-    ],
-    name="finetuning_model",
-)
-finetuning_model.compile(
-    optimizer=keras.optimizers.Adam(),
-    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-    metrics=[keras.metrics.SparseCategoricalAccuracy(name="acc")],
-)
-
-finetuning_history = finetuning_model.fit(
-    labeled_train_dataset, epochs=num_epochs, validation_data=test_dataset
-)
-print(
-    "Maximal validation accuracy: {:.2f}%".format(
-        max(finetuning_history.history["val_acc"]) * 100
-    )
-
-)
-
-# save weights
-pretraining_model.save_weights('../checkpoints/pretraining_model.weights.h5')
-print("done saving model")
-
-# Code for loading a new model
-model2 = ContrastiveModel()
-
-model2.compile(
-    contrastive_optimizer=keras.optimizers.Adam(),
-    probe_optimizer=keras.optimizers.Adam(),
-)
-model2.load_weights('../checkpoints/pretraining_model.weights.h5')
-
-
-

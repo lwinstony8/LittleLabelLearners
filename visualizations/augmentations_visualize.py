@@ -22,7 +22,7 @@ import keras
 from keras import ops
 from keras import layers
 
-from augmentations import RandomColorAffine, get_augmenter
+from model.augmentations import RandomColorAffine, get_augmenter
 
 from data.dataloader import Dataloader, download_data
 
@@ -53,24 +53,22 @@ def visualize_augmentations(num_images, dataset):
         images,
         get_augmenter(**classification_augmentation)(images),
         get_augmenter(**contrastive_augmentation)(images),
-        get_augmenter(**contrastive_augmentation)(images),
     )
     row_titles = [
         "Original:",
         "Weakly augmented:",
         "Strongly augmented:",
-        "Strongly augmented:",
     ]
     plt.figure(figsize=(num_images * 2.2, 4 * 2.2), dpi=100)
     for column, image_row in enumerate(augmented_images):
         for row, image in enumerate(image_row):
-            plt.subplot(4, num_images, row * num_images + column + 1)
+            plt.subplot(3, num_images, row * num_images + column + 1)
             plt.imshow(image)
             if column == 0:
                 plt.title(row_titles[row], loc="left")
             plt.axis("off")
     plt.tight_layout()
-    plt.savefig('visualizeAugmentationsw.png')
+    plt.savefig('visualize_augmentations.png')
 
 
 # load cifar
