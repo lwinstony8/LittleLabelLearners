@@ -66,10 +66,10 @@ class ScheduledSubsetCallback():
         # NOTE: These if statements allow us to short-cut out of re-generating datasets
         if cur_epoch > self.model.dataloader.num_classes:
             return
-        subset_size = cur_epoch
-        if subset_size < self.model.floor_num_classes:
+        subset_size = cur_epoch # TODO: this can be a much more complicated update method...
+        if subset_size <= self.model.floor_num_classes:
             return
-        if subset_size > self.model.ceiling_num_classes+1:
+        if subset_size > self.model.ceiling_num_classes:
             return
                 
         '''

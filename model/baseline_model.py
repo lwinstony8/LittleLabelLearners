@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
     my_baseline_model = BaselineModel(train, test, 
                                       floor_num_classes=5, 
-                                      ceiling_num_classes=8)
+                                      ceiling_num_classes=5)
     my_baseline_model.compile(
         optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
@@ -106,12 +106,13 @@ if __name__ == '__main__':
     # indices to access existing objects
 
     model_history = defaultdict(lambda: [])
+    scheduled_subset_callback = ScheduledSubsetCallback(my_baseline_model)
     for epoch in range(hp.num_epochs):
+        scheduled_subset_callback(cur_epoch=epoch)
         for k, v in my_baseline_model.fit(
             my_baseline_model.dataloader.labeled_train_dataset, 
             epochs=1, 
             validation_data=my_baseline_model.dataloader.test_dataset,
-            callbacks=[ScheduledSubsetCallback(cur_epoch=epoch)]
         ).history.items():
             model_history[k].extend(v)
 

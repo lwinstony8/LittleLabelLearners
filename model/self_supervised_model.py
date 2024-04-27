@@ -218,23 +218,11 @@ if __name__ == '__main__':
             self_supervised_model.dataloader.train_dataset, 
             epochs=1, # NOTE: this has to be 1; we only use each subset ONCE
             validation_data=self_supervised_model.dataloader.test_dataset,
-            # callbacks=[ScheduledSubsetCallback(cur_epoch=epoch)],
-            # TODO: this Callback is an abuse of the term "epoch"
-            # Since we want the epoch to be relevant to the outside loop epoch
-            # But it triggers on the fit's epoch
-            # It may very well be cleaner to make this Callback a separate method
-            # That takes in the model and sets values in a similar manner
-            # But not be a keras Callback object!
         ).history.items():
             model_history[k].extend(v)
 
-
-            
-
-    # print(f'{model_history=}')
     print(
         "Maximal validation accuracy: {:.2f}%".format(
             max(model_history["val_p_acc"]) * 100
-            # max(val_p_acc_list) * 100
         )
     )
