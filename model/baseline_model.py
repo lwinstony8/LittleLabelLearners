@@ -57,13 +57,14 @@ train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_datas
 '''
 
 class BaselineModel(keras.Model):
-    def __init__(self, train, test, floor_num_classes=5, ceiling_num_classes=10):
+    def __init__(self, train, test, num_class_range=(5,10)):
         super().__init__()
-        self.floor_num_classes = floor_num_classes
-        self.ceiling_num_classes = ceiling_num_classes
+        self.num_classes_range = num_class_range
+        # self.floor_num_classes = floor_num_classes
+        # self.ceiling_num_classes = ceiling_num_classes
         self.dataloader = Dataloader(train,test)
         self.dataloader.preprocess()
-        self.dataloader.generate_subsets(self.floor_num_classes)
+        self.dataloader.generate_subsets(self.num_classes_range[0])
         self.dataloader.prepare_dataset(
             self.dataloader.x_train_subset, 
             self.dataloader.y_train_subset, 
@@ -93,8 +94,7 @@ if __name__ == '__main__':
     train, test = download_data()
 
     my_baseline_model = BaselineModel(train, test, 
-                                      floor_num_classes=5, 
-                                      ceiling_num_classes=5)
+                                      num_class_range=(5,10))
     my_baseline_model.compile(
         optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),

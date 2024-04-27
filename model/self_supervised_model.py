@@ -25,17 +25,15 @@ from collections import defaultdict
 
 # Define the contrastive model with model-subclassing
 class ContrastiveModel(keras.Model):
-    def __init__(self, train, test, floor_num_classes=5, ceiling_num_classes=10):
+    def __init__(self, train, test, num_classes_range=(5,10)):
         super().__init__()
-        self.floor_num_classes = floor_num_classes
-        self.ceiling_num_classes = ceiling_num_classes
         self.temperature = hp.temperature
         self.contrastive_augmenter = get_augmenter(**hp.contrastive_augmentation)
         self.classification_augmenter = get_augmenter(**hp.classification_augmentation)
         
         self.dataloader = Dataloader(train, test)
         self.dataloader.preprocess()
-        self.dataloader.generate_subsets(self.floor_num_classes)
+        self.dataloader.generate_subsets(self.num_classes_range[0])
         self.dataloader.prepare_dataset(
             self.dataloader.x_train_subset, 
             self.dataloader.y_train_subset, 
@@ -203,8 +201,7 @@ if __name__ == '__main__':
 
     # Contrastive pretraining
     self_supervised_model = ContrastiveModel(train, test,
-                                             floor_num_classes=5,
-                                             ceiling_num_classes=10)
+                                             num_classes_range=(5,10))
     self_supervised_model.compile(
         contrastive_optimizer=keras.optimizers.Adam(),
         probe_optimizer=keras.optimizers.Adam(),

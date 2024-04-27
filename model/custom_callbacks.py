@@ -14,12 +14,7 @@ class ScheduledSubsetCallback_Old(keras.callbacks.Callback):
         if self.cur_epoch > self.model.dataloader.num_classes:
             return
         subset_size = self.cur_epoch
-        if subset_size < self.model.floor_num_classes:
-            return
-        if subset_size > self.model.ceiling_num_classes+1:
-            # print('Reached ceiling!')
-            # print(f'{subset_size=}')
-            # print(f'{self.model.ceiling_num_classes=}')
+        if subset_size < self.model.num_classes_range[0] or subset_size >= self.model.num_classes_range[1]:
             return
         if self.cur_epoch == 0:
             return
@@ -67,9 +62,9 @@ class ScheduledSubsetCallback():
         if cur_epoch > self.model.dataloader.num_classes:
             return
         subset_size = cur_epoch # TODO: this can be a much more complicated update method...
-        if subset_size <= self.model.floor_num_classes:
-            return
-        if subset_size > self.model.ceiling_num_classes:
+
+        # This is an inclusive range
+        if subset_size <= self.model.num_classes_range[0] or subset_size > self.model.num_classes_range[1]:
             return
                 
         '''
@@ -89,3 +84,7 @@ class ScheduledSubsetCallback():
                 
         print(f'{subset_size=}')
         print(f'{self.model.dataloader.x_train_subset.shape=}')
+
+    def split_rate_handler(cur_epoch):
+        
+        ...
