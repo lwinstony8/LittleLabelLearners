@@ -18,6 +18,8 @@ from data.dataloader import Dataloader, download_data
 from custom_callbacks import ScheduledSubsetCallback
 import hyperparameters as hp
 
+from collections import defaultdict
+
 '''
 # Full Train/Test data
 train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_dataset(
@@ -55,12 +57,13 @@ train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_datas
 '''
 
 class BaselineModel(keras.Model):
-    def __init__(self, train, test):
+    def __init__(self, train, test, floor_num_classes=5, ceiling_num_classes=10):
         super().__init__()
-        self.base_num_classes = 7
+        self.floor_num_classes = floor_num_classes
+        self.ceiling_num_classes = ceiling_num_classes
         self.dataloader = Dataloader(train,test)
         self.dataloader.preprocess()
-        self.dataloader.generate_subsets(self.base_num_classes)
+        self.dataloader.generate_subsets(self.floor_num_classes)
         self.dataloader.prepare_dataset(
             self.dataloader.x_train_subset, 
             self.dataloader.y_train_subset, 
@@ -89,7 +92,9 @@ if __name__ == '__main__':
     # TODO: parseargs; check if we want scheduled subset; set base_num_classes...
     train, test = download_data()
 
-    my_baseline_model = BaselineModel(train, test)
+    my_baseline_model = BaselineModel(train, test, 
+                                      floor_num_classes=5, 
+                                      ceiling_num_classes=8)
     my_baseline_model.compile(
         optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
@@ -99,15 +104,19 @@ if __name__ == '__main__':
     # TODO: Write our own train/test to take in indices instead of dataset objects
     # Therefore, we can use the same original data object, but only calculate 
     # indices to access existing objects
-    baseline_logs = my_baseline_model.fit(
-        my_baseline_model.dataloader.labeled_train_dataset, 
-        epochs=hp.num_epochs, 
-        validation_data=my_baseline_model.dataloader.test_dataset,
-        callbacks=[ScheduledSubsetCallback()]
-    )
+
+    model_history = defaultdict(lambda: [])
+    for epoch in range(hp.num_epochs):
+        for k, v in my_baseline_model.fit(
+            my_baseline_model.dataloader.labeled_train_dataset, 
+            epochs=1, 
+            validation_data=my_baseline_model.dataloader.test_dataset,
+            callbacks=[ScheduledSubsetCallback(cur_epoch=epoch)]
+        ).history.items():
+            model_history[k].extend(v)
 
     print(
         "Maximal validation accuracy: {:.2f}%".format(
-            max(baseline_logs.history["val_acc"]) * 100
+            max(model_history["val_acc"]) * 100
         )
     )

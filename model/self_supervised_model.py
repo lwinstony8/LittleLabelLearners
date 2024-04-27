@@ -1,11 +1,8 @@
 import os
-
 import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-
 os.environ["KERAS_BACKEND"] = "tensorflow"
-
 
 # Make sure we are able to handle large datasets
 import resource
@@ -14,27 +11,37 @@ low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
 import tensorflow as tf
-
-
 import keras
 from keras import ops
 from keras import layers
 
 from augmentations import get_augmenter
 from data.dataloader import Dataloader, download_data
+from custom_callbacks import ScheduledSubsetCallback, TimingCallback
 import hyperparameters as hp
+
+from collections import defaultdict
 
 
 # Define the contrastive model with model-subclassing
 class ContrastiveModel(keras.Model):
-    def __init__(self):
+    def __init__(self, train, test, floor_num_classes=5, ceiling_num_classes=10):
         super().__init__()
-
-        self.dataloader = Dataloader()
-
+        self.floor_num_classes = floor_num_classes
+        self.ceiling_num_classes = ceiling_num_classes
         self.temperature = hp.temperature
         self.contrastive_augmenter = get_augmenter(**hp.contrastive_augmentation)
         self.classification_augmenter = get_augmenter(**hp.classification_augmentation)
+        
+        self.dataloader = Dataloader(train, test)
+        self.dataloader.preprocess()
+        self.dataloader.generate_subsets(self.floor_num_classes)
+        self.dataloader.prepare_dataset(
+            self.dataloader.x_train_subset, 
+            self.dataloader.y_train_subset, 
+            self.dataloader.x_test, 
+            self.dataloader.y_test)
+
         self.encoder = keras.Sequential(
             [
                 layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
@@ -56,8 +63,9 @@ class ContrastiveModel(keras.Model):
             name="projection_head",
         )
         # Single dense layer for linear probing
-        self.linear_probe = keras.Sequential(
-            [layers.Input(shape=(hp.width,)), layers.Dense(10)],
+        self.linear_probe = keras.Sequential([
+            layers.Input(shape=(hp.width,)), 
+            layers.Dense(10)],
             name="linear_probe",
         )
 
@@ -104,7 +112,9 @@ class ContrastiveModel(keras.Model):
         # The similarity between the representations of two augmented views of the
         # same image should be higher than their similarity with other views
         batch_size = ops.shape(projections_1)[0]
+        # tf.print(f'{batch_size=}')
         contrastive_labels = ops.arange(batch_size)
+        # tf.print(f'{contrastive_labels=}')
         self.contrastive_accuracy.update_state(contrastive_labels, similarities)
         self.contrastive_accuracy.update_state(
             contrastive_labels, ops.transpose(similarities)
@@ -121,15 +131,14 @@ class ContrastiveModel(keras.Model):
         return (loss_1_2 + loss_2_1) / 2
 
     def train_step(self, data):
-        print(f'{data[0].shape=}')
-        print(f'{len(data[1])=}')
+        # tf.print(f'{data[0].shape=}')
+        # tf.print(f'{len(data[1])=}')
         unlabeled_images = data[0]
         labeled_images, labels = data[1]
-        # unlabeled_images, _, labeled_images, labels = data
-
 
         # Both labeled and unlabeled images are used, without labels
         images = ops.concatenate((unlabeled_images, labeled_images), axis=0)
+        # tf.print(f'{images.shape=}')
         # Each image is augmented twice, differently
         augmented_images_1 = self.contrastive_augmenter(images, training=True)
         augmented_images_2 = self.contrastive_augmenter(images, training=True)
@@ -161,8 +170,8 @@ class ContrastiveModel(keras.Model):
             # and updating the batch normalization paramers if they are used
             features = self.encoder(preprocessed_images, training=False)
             class_logits = self.linear_probe(features, training=True)
-            print(f'{labels.shape=}')
-            print(f'{class_logits.shape=}')
+            # tf.print(f'{labels.shape=}')
+            # tf.print(f'{class_logits.shape=}')
             probe_loss = self.probe_loss(labels, class_logits)
         gradients = tape.gradient(probe_loss, self.linear_probe.trainable_weights)
         self.probe_optimizer.apply_gradients(
@@ -189,35 +198,43 @@ class ContrastiveModel(keras.Model):
         # Only the probe metrics are logged at test time
         return {m.name: m.result() for m in self.metrics[2:]}
 
-
-
-
 if __name__ == '__main__':
     train, test = download_data()
-    my_dataloader = Dataloader(train, test)
-
-    my_dataloader.preprocess()
-    my_dataloader.generate_subsets()
-    my_dataloader.prepare_dataset(
-        my_dataloader.x_train_subset, 
-        my_dataloader.y_train_subset, 
-        my_dataloader.x_test, 
-        my_dataloader.y_test)
 
     # Contrastive pretraining
-    pretraining_model = ContrastiveModel()
-    pretraining_model.compile(
+    self_supervised_model = ContrastiveModel(train, test,
+                                             floor_num_classes=5,
+                                             ceiling_num_classes=10)
+    self_supervised_model.compile(
         contrastive_optimizer=keras.optimizers.Adam(),
         probe_optimizer=keras.optimizers.Adam(),
     )
+    
+    model_history = defaultdict(lambda: [])
+    scheduled_subset_callback = ScheduledSubsetCallback(self_supervised_model)
+    for epoch in range(hp.num_epochs):
+        scheduled_subset_callback(cur_epoch=epoch)
+        for k, v in self_supervised_model.fit(
+            self_supervised_model.dataloader.train_dataset, 
+            epochs=1, # NOTE: this has to be 1; we only use each subset ONCE
+            validation_data=self_supervised_model.dataloader.test_dataset,
+            # callbacks=[ScheduledSubsetCallback(cur_epoch=epoch)],
+            # TODO: this Callback is an abuse of the term "epoch"
+            # Since we want the epoch to be relevant to the outside loop epoch
+            # But it triggers on the fit's epoch
+            # It may very well be cleaner to make this Callback a separate method
+            # That takes in the model and sets values in a similar manner
+            # But not be a keras Callback object!
+        ).history.items():
+            model_history[k].extend(v)
 
-    pretraining_history = pretraining_model.fit(
-        my_dataloader.train_dataset, 
-        epochs=hp.num_epochs, 
-        validation_data=my_dataloader.test_dataset
-    )
+
+            
+
+    # print(f'{model_history=}')
     print(
         "Maximal validation accuracy: {:.2f}%".format(
-            max(pretraining_history.history["val_p_acc"]) * 100
+            max(model_history["val_p_acc"]) * 100
+            # max(val_p_acc_list) * 100
         )
     )

@@ -4,8 +4,8 @@ import numpy as np
 from PIL import Image
 
 # Dataset hyperparameters
-unlabeled_dataset_size = 100000
-labeled_dataset_size = 5000
+# unlabeled_dataset_size = 100000
+# labeled_dataset_size = 5000
 image_channels = 3
 
 # Algorithm hyperparameters
@@ -26,10 +26,15 @@ class Dataloader():
         # since we know the world (i.e. CIFAR10 dataset) only has 10 objects
         self.num_classes = len(np.unique(self.y_test))
 
+
+        self.x_train_subset = None
+        self.y_train_subset = None
+        self.x_test_subset = None 
+        self.y_test_subset = None 
+        
         self.train_dataset = None
         self.labeled_train_dataset = None
         self.test_dataset = None
-        
         #print(f'{self.x_train.shape=}')
 
     # method to get the subsets of the labels
@@ -40,7 +45,7 @@ class Dataloader():
         subset_labels_train_indices = np.nonzero(np.isin(self.y_train, subset_labels))[0]
         subset_labels_test_indices = np.nonzero(np.isin(self.y_test, subset_labels))[0]
 
-        # actually winindg down the data
+        # actually winding down the data
         self.x_train_subset = self.x_train[subset_labels_train_indices]
         self.y_train_subset = self.y_train[subset_labels_train_indices]
         self.x_test_subset = self.x_test[subset_labels_test_indices]
@@ -82,14 +87,18 @@ class Dataloader():
     def prepare_dataset(self, x_train, y_train, x_test, y_test):
         # Labeled and unlabeled samples are loaded synchronously
         # with batch sizes selected accordingly
-        steps_per_epoch = (unlabeled_dataset_size + labeled_dataset_size) // batch_size
-        unlabeled_batch_size = unlabeled_dataset_size // steps_per_epoch
+        # getting the indices for out labeled and unlabeled data
+        train_x_labeled_idx, train_x_unlabeled_idx = self.generate_labeled_unlabeled_indices(x_train)
+        labeled_dataset_size = len(train_x_labeled_idx)
+        unlabeled_dataset_size = len(train_x_unlabeled_idx)
+        
+        steps_per_epoch = len(x_train) // batch_size
+        print(f'{steps_per_epoch=}')
         labeled_batch_size = labeled_dataset_size // steps_per_epoch
+        unlabeled_batch_size = unlabeled_dataset_size // steps_per_epoch
         print(
             f"Batch size is: {unlabeled_batch_size} (unlabeled) + {labeled_batch_size} (labeled)"  
         )
-        # getting the indices for out labeled and unlabeled data
-        train_x_labeled_idx, train_x_unlabeled_idx = self.generate_labeled_unlabeled_indices(x_train)
 
         # getting the unlable
         unlabeled_train_dataset = x_train[train_x_unlabeled_idx]
@@ -135,19 +144,7 @@ class Dataloader():
         self.train_dataset=train_dataset
         self.labeled_train_dataset=labeled_train_dataset
         self.test_dataset=test_dataset
-        return train_dataset, labeled_train_dataset, test_dataset
-    
-    '''
-    # method that one_hot encodes the labels for a non specific 
-    def one_hot(self, labels):
-        #print(f"{labels.shape=}")
-        encoded = tf.one_hot(labels, depth=self.num_classes)
-        encoded = tf.squeeze(encoded)
-        print(f'{encoded.shape=}')
-        return encoded
-    '''
-
-    
+        # return train_dataset, labeled_train_dataset, test_dataset
 
 # function that downloads the data from keras
 def download_data():
