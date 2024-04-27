@@ -1,8 +1,9 @@
 import keras
 import time
 import matplotlib.pyplot as plt
+import hyperparameters as hp
 
-class ScheduledSubsetCallback_Old(keras.callbacks.Callback):
+class ScheduledSubsetCallback_old(keras.callbacks.Callback):
     def __init__(self, cur_epoch):
         super().__init__()
         self.cur_epoch = cur_epoch
@@ -38,7 +39,7 @@ class ScheduledSubsetCallback_Old(keras.callbacks.Callback):
         print(f'{self.model.dataloader.x_train_subset.shape=}')
 
 # TODO: Convert to fit big-epoch-loop instead
-class TimingCallback(keras.callbacks.Callback):
+class TimingCallback_old(keras.callbacks.Callback):
     def __init__(self):
         self.times = []
         # use this value as reference to calculate cummulative time taken
@@ -52,27 +53,40 @@ class TimingCallback(keras.callbacks.Callback):
         plt.plot(*zip(*self.times))
         plt.show()
         plt.savefig('times per epoch')
-
+        
 class ScheduledSubsetCallback():
-    def __init__(self, model):
+    def __init__(self, model: keras.Model):
+        """ Initializer for ScheduledSubsetCallback object. Takes in a Model object (i.e. BaselineModel, ContrastiveModel, etc.)
+
+        Args:
+            model (keras.Model)
+        """        
         self.model = model
 
-    def __call__(self, cur_epoch):
-        # NOTE: These if statements allow us to short-cut out of re-generating datasets
-        if cur_epoch > self.model.dataloader.num_classes:
-            return
-        subset_size = cur_epoch # TODO: this can be a much more complicated update method...
+    def __call__(self, cur_epoch: int):
+        """ Uses cur_epoch to determine rate of subsetting and label splitting
+            Will check to make sure subset_size and split_rate are within given model's respective ranges
 
-        # This is an inclusive range
-        if subset_size <= self.model.num_classes_range[0] or subset_size > self.model.num_classes_range[1]:
+        Args:
+            cur_epoch (int)
+        """        
+        subset_size = cur_epoch # TODO: this can be a much more complicated update method...
+        subset_size = max(subset_size, self.model.num_classes_range[0])        
+        subset_size = min(subset_size, self.model.num_classes_range[1])   
+
+        # Ensure split_rate is within range
+        split_rate = cur_epoch / hp.num_epochs
+        split_rate = max(split_rate, self.model.split_rate_range[0])
+        split_rate = min(split_rate, self.model.split_rate_range[1])
+
+        # If subset_size AND split_rate has not changed
+        if subset_size == self.model.cur_num_classes and split_rate == self.model.cur_split_rate:
             return
+        
+        # Update cur_num_classes/split_rate if changed!
+        self.model.cur_num_classes = subset_size
+        self.model.cur_split_rate = split_rate
                 
-        '''
-        ## Explicitly re-generate subsets
-        # subset_size = min(self.cur_epoch, self.model.dataloader.num_classes)
-        # subset_size = max(subset_size, self.model.floor_num_classes) # lower bound floor_num_classes
-        # subset_size = min(subset_size, self.model.ceiling_num_classes) # upper bound ceiling_num_classes
-        '''
         self.model.dataloader.generate_subsets(subset_size=subset_size)
         ## NOTE: this might be put inside ScheduledSubsetCallback
         # this will get replaced once we have the other scheduler
@@ -80,11 +94,7 @@ class ScheduledSubsetCallback():
             self.model.dataloader.x_train_subset, 
             self.model.dataloader.y_train_subset, 
             self.model.dataloader.x_test, 
-            self.model.dataloader.y_test)
+            self.model.dataloader.y_test,
+            split_rate=split_rate)
                 
-        print(f'{subset_size=}')
-        print(f'{self.model.dataloader.x_train_subset.shape=}')
-
-    def split_rate_handler(cur_epoch):
-        
-        ...
+        print(f'\n{subset_size=}; {self.model.dataloader.x_train_subset.shape=}; {split_rate=}')

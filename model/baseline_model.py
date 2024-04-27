@@ -11,6 +11,7 @@ import resource
 low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
+import numpy as np
 import keras
 from keras import layers
 
@@ -57,19 +58,33 @@ train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_datas
 '''
 
 class BaselineModel(keras.Model):
-    def __init__(self, train, test, num_class_range=(5,10)):
+    def __init__(self, train: np.ndarray, test: np.ndarray, 
+                 num_classes_range: int | tuple[int, int]=(5, 10), 
+                 split_rate_range: float | tuple[float, float]=(0.5, 0.5)):
+        """ Initializer for BaselineModel. Simple CNN with linear classification head
+
+        Args:
+            train (np.ndarray): Training dataset containing labeled and unlabeled samples
+            test (np.ndarray): Testing dataset containing labeled and unlabeled samples
+            num_classes_range (int | tuple[int, int], optional): INCLUSIVE range of possible subset_sizes. Use a single int to designate constant subset_size. Defaults to (5,10).
+            split_rate_range (float | tuple[float, float], optional): INCLUSIVE range of possible split_rates. Use a single float to designate constant split_rate. Defaults to (0.5, 0.5).
+        """        
         super().__init__()
-        self.num_classes_range = num_class_range
+        self.num_classes_range = num_classes_range if isinstance(num_classes_range, tuple) else (num_classes_range, num_classes_range)
+        self.split_rate_range= split_rate_range if isinstance(split_rate_range, tuple) else (split_rate_range, split_rate_range)
+        self.cur_num_classes = self.num_classes_range[0]
+        self.cur_split_rate = self.split_rate_range[0]
         # self.floor_num_classes = floor_num_classes
         # self.ceiling_num_classes = ceiling_num_classes
         self.dataloader = Dataloader(train,test)
         self.dataloader.preprocess()
-        self.dataloader.generate_subsets(self.num_classes_range[0])
+        self.dataloader.generate_subsets(self.cur_num_classes)
         self.dataloader.prepare_dataset(
             self.dataloader.x_train_subset, 
             self.dataloader.y_train_subset, 
             self.dataloader.x_test, 
-            self.dataloader.y_test)
+            self.dataloader.y_test,
+            split_rate=self.cur_split_rate)
         
         #define the layers for the model
         self.encoder = keras.Sequential(
@@ -94,7 +109,8 @@ if __name__ == '__main__':
     train, test = download_data()
 
     my_baseline_model = BaselineModel(train, test, 
-                                      num_class_range=(5,10))
+                                      num_classes_range=(5, 10),
+                                      split_rate_range=(0.5, 0.5))
     my_baseline_model.compile(
         optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),

@@ -15,9 +15,18 @@ width = 128
 temperature = 0.1
 # dataloader class used to load in all our data
 class Dataloader():
+    """ Dataloader Object contains the train/test data and handles data-specific operations, namely preprocessing, subsetting, defining label split rates, etc.
+
+    """    
 
     # constructor for the Dataloader
-    def __init__(self, train, test):
+    def __init__(self, train:np.ndarray, test:np.ndarray):
+        """ Initializer for Dataloader
+
+        Args:
+            train (np.ndarray): Training dataset containing labeled and unlabeled samples
+            test (np.ndarray): Testing dataset containing labeled and unlabeled samples
+        """        
         self.x_train, self.y_train = train
         self.x_test, self.y_test = test
 
@@ -39,6 +48,14 @@ class Dataloader():
 
     # method to get the subsets of the labels
     def generate_subsets(self, subset_size=7):
+        """ Generates and save as instance variables train/test subsets for both features and labels. Subsets differ from the original data
+            by how many num_classes are represented in the subsets
+
+        Args:
+            subset_size (int, optional): Defines the number of classes to keep in subset. Defaults to 7.
+        """        
+        
+        
         # creating the range of the labels that we want to select for
 
         subset_labels = np.arange(subset_size)
@@ -57,7 +74,16 @@ class Dataloader():
     def get_subsets(self):
         return tf.cast(self.x_train_subset, dtype=tf.float32), tf.cast(self.y_train_subset, dtype=tf.float32), tf.cast(self.x_test_subset, dtype=tf.float32), tf.cast(self.y_test_subset, dtype=tf.float32)
     
-    def generate_labeled_unlabeled_indices(self, data, split_rate=0.5):
+    def generate_labeled_unlabeled_indices(self, data: np.ndarray, split_rate=0.5) -> tuple[np.ndarray, np.ndarray]:
+        """ Randomly obtains indices of the data to have their labels kept or removed
+
+        Args:
+            data (np.ndarray): A features dataset
+            split_rate (float, optional): The rate of labels to KEEP. Defaults to 0.5.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: (labeled_indices, unlabeled_indices)
+        """           
         # getting the number of samples
         num_samples = len(data)
         rng = np.random.default_rng()
@@ -81,51 +107,51 @@ class Dataloader():
         
     # preprocessing the data, normalizing all the values
     def preprocess(self):
+        """ Simple pre-processing step on the instance features dataset
+        """        
         self.x_train = self.x_train / 255.
         self.x_test = self.x_test / 255.
 
-    def prepare_dataset(self, x_train, y_train, x_test, y_test):
+    def prepare_dataset(self, x_train: np.ndarray, y_train: np.ndarray, x_test: np.ndarray, y_test: np.ndarray, split_rate=0.5):
+        """ Prepares and saves TF datasets corresponding to labeled_train_dataset, train_dataset, and test_dataset as instance variables
+            Handles split_rate, which determines proportion of labeled/unlabeled data
+
+        Args:
+            x_train (np.ndarray): Features dataset for training
+            y_train (np.ndarray): Labels dataset for training
+            x_test (np.ndarray): Features dataset for testing
+            y_test (np.ndarray): Labels dataset for testing
+            split_rate (float, optional): The rate of labels to KEEP. Defaults to 0.5.
+        """        
         # Labeled and unlabeled samples are loaded synchronously
         # with batch sizes selected accordingly
         # getting the indices for out labeled and unlabeled data
-        train_x_labeled_idx, train_x_unlabeled_idx = self.generate_labeled_unlabeled_indices(x_train)
+        train_x_labeled_idx, train_x_unlabeled_idx = self.generate_labeled_unlabeled_indices(x_train, split_rate=split_rate)
         labeled_dataset_size = len(train_x_labeled_idx)
         unlabeled_dataset_size = len(train_x_unlabeled_idx)
         
         steps_per_epoch = len(x_train) // batch_size
-        print(f'{steps_per_epoch=}')
+        # print(f'{steps_per_epoch=}')
         labeled_batch_size = labeled_dataset_size // steps_per_epoch
         unlabeled_batch_size = unlabeled_dataset_size // steps_per_epoch
-        print(
-            f"Batch size is: {unlabeled_batch_size} (unlabeled) + {labeled_batch_size} (labeled)"  
-        )
+        # print(
+        #     f"Batch size is: {unlabeled_batch_size} (unlabeled) + {labeled_batch_size} (labeled)"  
+        # )
 
         # getting the unlable
         unlabeled_train_dataset = x_train[train_x_unlabeled_idx]
         unlabeled_train_dataset = (
             tf.data.Dataset.from_tensor_slices(unlabeled_train_dataset)\
-            # .shuffle()
+            .shuffle(buffer_size=10*unlabeled_batch_size)
             .batch(unlabeled_batch_size))
         
-        #
         train_x_labeled = x_train[train_x_labeled_idx]
         train_y_labeled = y_train[train_x_labeled_idx]
         
-        # labeled_train_dataset = (
-        #     tf.data.Dataset.from_tensor_slices((train_x_labeled, self.one_hot(train_y_labeled)))
-        #     # .shuffle()
-        #     .batch(labeled_batch_size)
-        # )
-
-        # test_dataset = (
-        #     tf.data.Dataset.from_tensor_slices((x_test, self.one_hot(y_test)))
-        #     # .shuffle()
-        #     .batch(batch_size)
-        # )
 
         labeled_train_dataset = (
             tf.data.Dataset.from_tensor_slices((train_x_labeled, train_y_labeled))
-            # .shuffle()
+            .shuffle(buffer_size=10*labeled_batch_size)
             .batch(labeled_batch_size)
         )
 
