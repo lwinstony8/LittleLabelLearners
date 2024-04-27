@@ -25,18 +25,18 @@ from collections import defaultdict
 
 
 # Define the contrastive model with model-subclassing
-class SelfSupervisedModel(keras.Model):
-    def __init__(self, train:np.ndarray, test:np.ndarray, 
-                 num_classes_range: int|tuple[int, int]=(5, 10), split_rate_range: float|tuple[float, float]=(0.5, 0.5)):
-        """Initializer for SelfSupervisedModel. Contains three modules: encoder, projection_head, and linear_probe
+class GradualSupervised(keras.Model):
+    def __init__(self, train: np.ndarray, test: np.ndarray, 
+                 num_classes_range: int | tuple[int, int]=(5, 10), split_rate_range: float | tuple[float, float]=(0.5, 0.5)):
+        """Initializer for GradualSupervised. Contains three modules: encoder, projection_head, and linear_probe
 
         Args:
             train (np.ndarray): Training dataset containing labeled and unlabeled samples
             test (np.ndarray): Testing dataset containing labeled and unlabeled samples
             num_classes_range (int | tuple[int, int], optional): INCLUSIVE range of possible subset_sizes. Use a single int to designate constant subset_size. Defaults to (5, 10).
             split_rate_range (float | tuple[float, float], optional): INCLUSIVE range of possible split_rates. Use a single float to designate constant split_rate. Defaults to (0.5, 0.5).
-        """            
-        
+        """        
+
         super().__init__()
         self.temperature = hp.temperature
         self.contrastive_augmenter = get_augmenter(**hp.contrastive_augmentation)
@@ -145,18 +145,31 @@ class SelfSupervisedModel(keras.Model):
         )
         return (loss_1_2 + loss_2_1) / 2
 
-    def train_step(self, data):
-        # tf.print(f'{data[0].shape=}')
-        # tf.print(f'{len(data[1])=}')
+    def train_step(self, data: tuple[tf.Tensor, tuple[tf.Tensor, tf.Tensor]]) -> dict[str, tf.float32]:
+        """ Runs the training routine for a single step; i.e. trains on a single batch
+            Training routine consists of two steps:
+                1. Use both labeled and unlabeled images to update encoder AND projection heads in a self-supervised manner (i.e. NO LABELS)
+                2. Use only labeled images to update encoder AND linear probe in a semi-supervised manner (i.e. WITH LABELS)
+            
+            Note, step 2 differentiates GradualSupervisedModel from SelfSupervisedModel in that for the latter, labeled images do NOT update the encoder
+
+        Args:
+            data (tuple[tf.Tensor, tuple[tf.Tensor, tf.Tensor]]): (unlabeled_images, (labeled_images, labels))
+
+        Returns:
+            dict[str, tf.float32]: metrics
+        """        
         unlabeled_images = data[0]
         labeled_images, labels = data[1]
 
-        # Both labeled and unlabeled images are used, without labels
+        ########################################################################
+        # SELF-SUPERVISED PORTION
+        # Both labeled and unlabeled images are used WITHOUT LABELS
         images = ops.concatenate((unlabeled_images, labeled_images), axis=0)
-        # tf.print(f'{images.shape=}')
-        # Each image is augmented twice, differently
         augmented_images_1 = self.contrastive_augmenter(images, training=True)
         augmented_images_2 = self.contrastive_augmenter(images, training=True)
+
+        # Use contrastive_loss to update encoder WITHOUT LABELS
         with tf.GradientTape() as tape:
             features_1 = self.encoder(augmented_images_1, training=True)
             features_2 = self.encoder(augmented_images_2, training=True)
@@ -175,18 +188,21 @@ class SelfSupervisedModel(keras.Model):
             )
         )
         self.contrastive_loss_tracker.update_state(contrastive_loss)
+        # END SELF-SUPERVISED PORTION
+        ########################################################################
 
-        # Labels are only used in evalutation for an on-the-fly logistic regression
+        ########################################################################
+        # BEGIN SEMI-SUPERVISED PORTION
+        # Only labeled images are used WITH LABELS
         preprocessed_images = self.classification_augmenter(
             labeled_images, training=True
         )
+
+        # Use linear probe's classification loss to update both ENCODER and LINEAR PROBE
+        # Since encoder is being updated with labels, this is SEMI-SUPERIVSED
         with tf.GradientTape() as tape:
-            # the encoder is used in inference mode here to avoid regularization
-            # and updating the batch normalization paramers if they are used
-            features = self.encoder(preprocessed_images, training=False)
+            features = self.encoder(preprocessed_images, training=True)
             class_logits = self.linear_probe(features, training=True)
-            # tf.print(f'{labels.shape=}')
-            # tf.print(f'{class_logits.shape=}')
             probe_loss = self.probe_loss(labels, class_logits)
         gradients = tape.gradient(probe_loss, self.linear_probe.trainable_weights)
         self.probe_optimizer.apply_gradients(
@@ -194,6 +210,9 @@ class SelfSupervisedModel(keras.Model):
         )
         self.probe_loss_tracker.update_state(probe_loss)
         self.probe_accuracy.update_state(labels, class_logits)
+        # END SEMI-SUPERVISED PORTION
+        ########################################################################
+
 
         return {m.name: m.result() for m in self.metrics}
 
@@ -217,9 +236,9 @@ if __name__ == '__main__':
     train, test = download_data()
 
     # Contrastive pretraining
-    self_supervised_model = SelfSupervisedModel(train, test,
-                                                num_classes_range=(5, 10),
-                                                split_rate_range=(0.5, 0.5))
+    self_supervised_model = GradualSupervised(train, test,
+                                              num_classes_range=5,
+                                              split_rate_range=(0.01, 0.5))
     self_supervised_model.compile(
         contrastive_optimizer=keras.optimizers.Adam(),
         probe_optimizer=keras.optimizers.Adam(),

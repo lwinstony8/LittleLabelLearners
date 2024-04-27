@@ -29,7 +29,7 @@ classification_augmentation = {
     "jitter": 0.1,
 }
 # Algorithm hyperparameters
-num_epochs = 5
+num_epochs = 20
 batch_size = 525  # Corresponds to 200 steps per epoch
 width = 128
 temperature = 0.1
@@ -274,6 +274,7 @@ print(
 )
 
 # save weights
+os.makedirs(r'../checkpoints', exist_ok=True)
 pretraining_model.save_weights('../checkpoints/pretraining_model.weights.h5')
 print("done saving model")
 
