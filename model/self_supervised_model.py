@@ -28,6 +28,7 @@ class ContrastiveModel(keras.Model):
     def __init__(self, train, test, num_classes_range=(5,10)):
         super().__init__()
         self.temperature = hp.temperature
+        self.num_classes_range = num_classes_range
         self.contrastive_augmenter = get_augmenter(**hp.contrastive_augmentation)
         self.classification_augmenter = get_augmenter(**hp.classification_augmentation)
         
