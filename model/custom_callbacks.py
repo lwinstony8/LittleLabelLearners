@@ -64,8 +64,8 @@ class ScheduledSubsetCallback():
         self.model = model
 
     def __call__(self, cur_epoch: int):
-        """ Uses cur_epoch to determine rate of subsetting and label splitting
-            Will check to make sure subset_size and split_rate are within given model's respective ranges
+        """ Uses cur_epoch to determine rate of subsetting, label splitting, and learning rate
+            Will check to make sure subset_size, split_rate, and learning_rate are within given model's respective ranges
 
         Args:
             cur_epoch (int)
@@ -79,13 +79,20 @@ class ScheduledSubsetCallback():
         split_rate = max(split_rate, self.model.split_rate_range[0])
         split_rate = min(split_rate, self.model.split_rate_range[1])
 
-        # If subset_size AND split_rate has not changed
-        if subset_size == self.model.cur_num_classes and split_rate == self.model.cur_split_rate:
+        # Ensure learning_rate is within range
+        # this formula could easily change to something more complex, in this case starting out higher
+        learning_rate = 0.01 - (0.001*cur_epoch)
+        learning_rate = max(learning_rate, self.model.learning_rate_range[0])
+        learning_rate = min(learning_rate, self.model.learning_rate_range[1])
+
+        # If subset_size AND split_rate AND learning rate have not changed
+        if subset_size == self.model.cur_num_classes and split_rate == self.model.cur_split_rate and learning_rate == self.model.curr_learning_rate:
             return
         
-        # Update cur_num_classes/split_rate if changed!
+        # Update cur_num_classes/split_rate/curr_learning_rate if changed!
         self.model.cur_num_classes = subset_size
         self.model.cur_split_rate = split_rate
+        self.model.curr_learning_rate = learning_rate
                 
         self.model.dataloader.generate_subsets(subset_size=subset_size)
         ## NOTE: this might be put inside ScheduledSubsetCallback
@@ -97,4 +104,4 @@ class ScheduledSubsetCallback():
             self.model.dataloader.y_test,
             split_rate=split_rate)
                 
-        print(f'\n{subset_size=}; {self.model.dataloader.x_train_subset.shape=}; {split_rate=}')
+        print(f'\n{subset_size=}; {self.model.dataloader.x_train_subset.shape=}; {split_rate=}; {learning_rate=}')
