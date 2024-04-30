@@ -64,8 +64,8 @@ class ScheduledSubsetCallback():
         self.model = model
 
     def __call__(self, cur_epoch: int):
-        """ Uses cur_epoch to determine rate of subsetting and label splitting
-            Will check to make sure subset_size and split_rate are within given model's respective ranges
+        """ Uses cur_epoch to determine rate of subsetting, label splitting, contrastive learning rate, and probe learning rate
+            Will check to make sure subset_size, split_rate, andboth learning_rates are within given model's respective ranges
 
         Args:
             cur_epoch (int)
@@ -79,13 +79,27 @@ class ScheduledSubsetCallback():
         split_rate = max(split_rate, self.model.split_rate_range[0])
         split_rate = min(split_rate, self.model.split_rate_range[1])
 
-        # If subset_size AND split_rate has not changed
-        if subset_size == self.model.cur_num_classes and split_rate == self.model.cur_split_rate:
+        # Ensure contrastive_learning_rate is within range
+        # this formula could easily change to something more complex, in this case similar to exponential decay from keras
+        contrastive_learning_rate = self.model.contrastive_learning_rate_range[1] * (0.1 ** (cur_epoch / 500)) #- (0.001*cur_epoch)
+        contrastive_learning_rate = max(contrastive_learning_rate, self.model.contrastive_learning_rate_range[0])
+        contrastive_learning_rate = min(contrastive_learning_rate, self.model.contrastive_learning_rate_range[1])
+
+        # Ensure probe_learning_rate is within range
+        # this formula could easily be changed to something more complex, in this case similar to exponential decay from keras
+        probe_learning_rate = self.model.probe_learning_rate_range[1]* (0.1 ** (cur_epoch / 500)) #- (0.001*cur_epoch)
+        probe_learning_rate = max(probe_learning_rate, self.model.probe_learning_rate_range[0])
+        probe_learning_rate = min(probe_learning_rate, self.model.probe_learning_rate_range[1])
+
+        # If subset_size AND split_rate AND contrastive learning rate and probe learning rate have not changed
+        if subset_size == self.model.cur_num_classes and split_rate == self.model.cur_split_rate and contrastive_learning_rate == self.model.curr_contrastive_learning_rate and probe_learning_rate == self.model.curr_probe_learning_rate:
             return
         
-        # Update cur_num_classes/split_rate if changed!
+        # Update cur_num_classes/split_rate/curr_contrastive_learning_rate/curr_probe_learning_rate if changed!
         self.model.cur_num_classes = subset_size
         self.model.cur_split_rate = split_rate
+        self.model.curr_contrastive_learning_rate = contrastive_learning_rate
+        self.model.curr_probe_learning_rate = probe_learning_rate
                 
         self.model.dataloader.generate_subsets(subset_size=subset_size)
         ## NOTE: this might be put inside ScheduledSubsetCallback
@@ -97,4 +111,5 @@ class ScheduledSubsetCallback():
             self.model.dataloader.y_test,
             split_rate=split_rate)
                 
-        print(f'\n{subset_size=}; {self.model.dataloader.x_train_subset.shape=}; {split_rate=}')
+        print(f'\n{subset_size=}; {self.model.dataloader.x_train_subset.shape=}; {split_rate=}; {contrastive_learning_rate=}; {probe_learning_rate=}')
+        print(f'{cur_epoch=}')
