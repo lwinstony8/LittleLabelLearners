@@ -1,7 +1,7 @@
 import keras
 import time
 import matplotlib.pyplot as plt
-import hyperparameters as hp
+import model.hyperparameters as hp
 
 class ScheduledSubsetCallback_old(keras.callbacks.Callback):
     def __init__(self, cur_epoch):

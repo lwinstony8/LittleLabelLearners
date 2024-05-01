@@ -16,10 +16,10 @@ import keras
 from keras import ops
 from keras import layers
 
-from augmentations import get_augmenter
 from data.dataloader import Dataloader, download_data
-from custom_callbacks import ScheduledSubsetCallback
-import hyperparameters as hp
+from model.augmentations import get_augmenter
+from model.custom_callbacks import ScheduledSubsetCallback
+import model.hyperparameters as hp
 
 from collections import defaultdict
 
@@ -67,12 +67,12 @@ class GradualSupervised(keras.Model):
 
         self.encoder = keras.Sequential(
             [
-                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
-                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
-                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
-                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="leaky_relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="leaky_relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="leaky_relu"),
+                layers.Conv2D(hp.width, kernel_size=3, strides=2, activation="leaky_relu"),
                 layers.Flatten(),
-                layers.Dense(hp.width, activation="relu"),
+                layers.Dense(hp.width, activation="leaky_relu"),
             ],
             name="encoder",
         )
@@ -80,7 +80,7 @@ class GradualSupervised(keras.Model):
         self.projection_head = keras.Sequential(
             [
                 keras.Input(shape=(hp.width,)),
-                layers.Dense(hp.width, activation="relu"),
+                layers.Dense(hp.width, activation="leaky_relu"),
                 layers.Dense(hp.width),
             ],
             name="projection_head",
@@ -244,26 +244,26 @@ if __name__ == '__main__':
     train, test = download_data()
 
     # Contrastive pretraining
-    self_supervised_model = GradualSupervised(train, test,
+    gradual_supervised_model = GradualSupervised(train, test,
                                               num_classes_range=(8,10),
                                               split_rate_range=(0.01, 0.9),
                                               contrastive_learning_rate_range=(0.001,0.001),
                                               probe_learning_rate_range=(0.01,0.03))
 
     # setting the unique training rates for each part of the model
-    self_supervised_model.compile(
-        contrastive_optimizer=keras.optimizers.Adam(self_supervised_model.curr_contrastive_learning_rate),
-        probe_optimizer=keras.optimizers.Adam(self_supervised_model.curr_probe_learning_rate),
+    gradual_supervised_model.compile(
+        contrastive_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
+        probe_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_probe_learning_rate),
     )
     
     model_history = defaultdict(lambda: [])
-    scheduled_subset_callback = ScheduledSubsetCallback(self_supervised_model)
+    scheduled_subset_callback = ScheduledSubsetCallback(gradual_supervised_model)
     for epoch in range(hp.num_epochs):
         scheduled_subset_callback(cur_epoch=epoch)
-        for k, v in self_supervised_model.fit(
-            self_supervised_model.dataloader.train_dataset, 
+        for k, v in gradual_supervised_model.fit(
+            gradual_supervised_model.dataloader.train_dataset, 
             epochs=1, # NOTE: this has to be 1; we only use each subset ONCE
-            validation_data=self_supervised_model.dataloader.test_dataset,
+            validation_data=gradual_supervised_model.dataloader.test_dataset,
         ).history.items():
             model_history[k].extend(v)
 
@@ -272,3 +272,8 @@ if __name__ == '__main__':
             max(model_history["val_p_acc"]) * 100
         )
     )
+    title_acc = "{:.2f}".format(max(model_history["val_p_acc"]) * 100)
+
+    os.makedirs(r'../checkpoints', exist_ok=True)
+    gradual_supervised_model.save_weights(f'../checkpoints/gradual_supervised_model_{title_acc}.weights.h5')
+    print('Successfully saved model!')

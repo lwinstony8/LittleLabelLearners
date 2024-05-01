@@ -19,6 +19,7 @@ from keras import ops
 from keras import layers
 from model.augmentations import RandomColorAffine, get_augmenter
 from model.contrastive_model import ContrastiveModel
+from model.gradual_supervised_model import GradualSupervised
 from data.dataloader import Dataloader, download_data
 
 from sklearn.decomposition import PCA
@@ -38,17 +39,22 @@ low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
 
 
-def load_model(weight_path: str=r'../checkpoints/pretraining_model.weights.h5') -> keras.Model:
+def load_model(model_type: str= 'GradualSupervised', weight_path: str=r'../checkpoints/pretraining_model.weights.h5') -> keras.Model:    
     """ Instantiates a Model, loads it with previously saved model_weights, compiles it, and then returns the compiled model
 
     Args:
+        model_type (str, optional): str name of Model type. Defaults to 'GradualSupervised'.
         weight_path (str, optional): Path to previously saved model weights. Defaults to r'../checkpoints/pretraining_model.weights.h5'.
 
     Returns:
         keras.Model: Compiled model using previously saved weights
     """    
     
-    model = ContrastiveModel()
+    # model = ContrastiveModel()
+    train, test = download_data()
+    if model_type == 'GradualSupervised':
+        model = GradualSupervised(train, test)
+
     model.load_weights(weight_path)
     model.compile(
         contrastive_optimizer=keras.optimizers.Adam(),
@@ -56,24 +62,22 @@ def load_model(weight_path: str=r'../checkpoints/pretraining_model.weights.h5') 
     )
     return model
 
-def load_dataset() -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
-    """ Creates a Dataloader object and returns its instance variable's DATASETS
+def load_dataset(model: keras.Model) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+    """ Processes given model's dataloader's data and returns datasets
 
     Returns:
         tuple[tf.Tensor, tf.Tensor, tf.Tensor]: (Dataloader.train_dataset, Dataloader.labeled_train_dataset, Dataloader.test_dataset)
     """    
-    train, test = download_data()
-    my_dataloader = Dataloader(train, test)
 
-    my_dataloader.preprocess()
-    my_dataloader.generate_subsets()
+    model.dataloader.preprocess()
+    model.dataloader.generate_subsets()
 
-    my_dataloader.prepare_dataset(
-        my_dataloader.x_train, 
-        my_dataloader.y_train, 
-        my_dataloader.x_test, 
-        my_dataloader.y_test)
-    return my_dataloader.train_dataset, my_dataloader.labeled_train_dataset, my_dataloader.test_dataset
+    model.dataloader.prepare_dataset(
+        model.dataloader.x_train, 
+        model.dataloader.y_train, 
+        model.dataloader.x_test, 
+        model.dataloader.y_test)
+    return model.dataloader.train_dataset, model.dataloader.labeled_train_dataset, model.dataloader.test_dataset
 
 def generate_latent_embeddings(model: keras.Model, data) -> tuple[tf.Tensor, tf.Tensor]:
     """ Generates and returns the latent embeddings calculated by the given model's encoder
@@ -151,8 +155,6 @@ def generate_KNN_predictions(encoded_data: tf.Tensor, true_labels: tf.Tensor, sp
 
     return KNN_preds, test_true_labels
 
-
-
 def reduce_PCA(features: tf.Tensor, n_dims: int=3) -> tf.Tensor:
     """ Via PCA, returns a reduced_features that only has n_dims dimensions
 
@@ -167,13 +169,14 @@ def reduce_PCA(features: tf.Tensor, n_dims: int=3) -> tf.Tensor:
     print('Running reduce_PCA')
     pca = PCA(n_dims)
     reduced_features = tf.transpose(pca.fit(tf.transpose(features)).components_)
-    print(f'{features.shape=}')
-    print(f'{reduced_features.shape=}, {n_dims=}')
+    # print(f'{features.shape=}')
+    # print(f'{reduced_features.shape=}, {n_dims=}')
 
     return reduced_features
 
 
-def plot_3d(reduced_features, labels):
+def plot_3d(features, labels):
+    reduced_features = reduce_PCA(features, 3)
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
     
@@ -204,16 +207,7 @@ def plot_3d(reduced_features, labels):
     """
 
     plt.show()
-    plt.savefig("3d_latent_visualization.png")
-
-# model = load_model()
-# print()
-# print("Model Loaded")
-# print()
-# train_dataset, labeled_train_dataset, test_dataset = load_dataset()
-# features, labels = generate_latent_embeddings(model, test_dataset)
-# reduced_features = reduce_PCA(features)
-# plot_3d(reduced_features, labels)
+    plt.savefig("3d_latent_visualization_gradual.png")
 
 def visualize_PCA(features: tf.Tensor, labels: tf.Tensor):
     """ Given features and labels, generate and save a scatterplot
@@ -227,7 +221,7 @@ def visualize_PCA(features: tf.Tensor, labels: tf.Tensor):
     cm = plt.scatter(reduced_features[:,0], reduced_features[:,1], c=tf.squeeze(labels))
     plt.colorbar(cm)
     plt.show()
-    plt.savefig('visualize_latent_pca.png')
+    plt.savefig('visualize_latent_pca_gradual.png')
 
 def visualize_UMAP(features: tf.Tensor, labels: tf.Tensor):
     """ Given features and labels, generate and save UMAP dimensionality-reduced scatter-plot
@@ -236,10 +230,11 @@ def visualize_UMAP(features: tf.Tensor, labels: tf.Tensor):
         features (tf.Tensor): Intended to be the output of a model's encoder layer on a batch of images
         labels (tf.Tensor): Labels associated with data; can be true labels, KMeans-assigned labels, KNN labels, etc. Used for coloring scatter-plot
     """    
+    print('Running visualize_UMAP')
     mapper = umap.UMAP().fit(features)
-    p = umap.plot.points(mapper, labels=tf.squeeze(labels), s=20)
+    p = umap.plot.points(mapper, labels=tf.squeeze(labels))
     umap.plot.plt.show()
-    umap.plot.plt.savefig('visualize_latent_umap.png')
+    umap.plot.plt.savefig('visualize_latent_umap_gradual.png')
     
 def generate_scores(encoded_features: tf.Tensor, true_labels: tf.Tensor):
     """ Given the encoded features and true labels, calculates the different scores that quantify our clusters
@@ -272,15 +267,19 @@ def generate_scores(encoded_features: tf.Tensor, true_labels: tf.Tensor):
 def main():
     ''' Main method of the file called when th fle s run '''
     # create the model instance and 
-    model = load_model()
+    # model = GradualSupervised()
+    model = load_model(model_type='GradualSupervised', weight_path=r'../checkpoints/gradual_supervised_model_49.60.weights.h5')
     print("Model Loaded")
-    train_dataset, labeled_train_dataset, test_dataset = load_dataset()
+    train_dataset, labeled_train_dataset, test_dataset = load_dataset(model)
     encoded_features, true_labels = generate_latent_embeddings(model, test_dataset)
     # print(f'{true_labels.shape=}')
     # print(f'{len(test_dataset)=}')
     # test_labels = np.concatenate([y for _, y in test_dataset], axis=0)
     #print(f'{test_labels.shape=}')
-    generate_scores(encoded_features=encoded_features,true_labels=true_labels)
+    # generate_scores(encoded_features=encoded_features,true_labels=true_labels)
+    # visualize_PCA(encoded_features, true_labels)
+    visualize_UMAP(encoded_features, true_labels)
+    # plot_3d(encoded_features, true_labels)
 
 
 
@@ -305,4 +304,3 @@ def get_n_colors(n):
 #     plt.scatter(x[labels_idx], y[labels_idx], colors=color_dict[label], label=f'Label {label}')
 
 # print(f'{labels.shape=}')
-
