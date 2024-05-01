@@ -25,7 +25,6 @@ from keras import layers
 from model.augmentations import RandomColorAffine, get_augmenter
 from data.dataloader import Dataloader, download_data
 
-
 class ContrastiveModel(keras.Model):
     def __init__(self, num_epochs=5, batch_size=525, width=128, temperature=0.1):
         super().__init__()
