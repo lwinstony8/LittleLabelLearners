@@ -11,6 +11,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import tensorflow as tf
+import numpy as np
+#exit()
 #import tensorflow_transform as tft
 import keras
 from keras import ops
@@ -20,6 +22,9 @@ from model.contrastive_model import ContrastiveModel
 from data.dataloader import Dataloader, download_data
 
 from sklearn.decomposition import PCA
+
+
+from sklearn.decomposition import PCA
 from sklearn.metrics.cluster import adjusted_rand_score, normalized_mutual_info_score
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
@@ -27,6 +32,7 @@ from sklearn.semi_supervised import LabelPropagation
 from sklearn.neighbors import KNeighborsClassifier
 import umap
 import umap.plot
+
 
 low, high = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (high, high))
@@ -146,6 +152,7 @@ def generate_KNN_predictions(encoded_data: tf.Tensor, true_labels: tf.Tensor, sp
     return KNN_preds, test_true_labels
 
 
+
 def reduce_PCA(features: tf.Tensor, n_dims: int=3) -> tf.Tensor:
     """ Via PCA, returns a reduced_features that only has n_dims dimensions
 
@@ -164,6 +171,49 @@ def reduce_PCA(features: tf.Tensor, n_dims: int=3) -> tf.Tensor:
     print(f'{reduced_features.shape=}, {n_dims=}')
 
     return reduced_features
+
+
+def plot_3d(reduced_features, labels):
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    
+    m = ['*', '+', 'D', '3', '4', 'X', 's', 'p', '8', 'P']
+    for index in range(len(labels)):
+        label = labels[index]
+        #print("label is: " + str(label))
+        cur_marker = m[int(label)]
+        xs = reduced_features[index, 0]
+        ys = reduced_features[index, 1]
+        zs = reduced_features[index, 2]
+        ax.scatter(xs, ys, zs, marker=cur_marker)
+
+    """
+    m = '1'
+    xs = reduced_features[:10, 0]
+    ys = reduced_features[:10, 1]
+    zs = reduced_features[:10, 2]
+
+    ax.scatter(xs, ys, zs, marker=m)
+
+    m = '2'
+    xs = reduced_features[10:20, 0]
+    ys = reduced_features[10:20, 1]
+    zs = reduced_features[10:20, 2]
+
+    ax.scatter(xs, ys, zs, marker=m)
+    """
+
+    plt.show()
+    plt.savefig("3d_latent_visualization.png")
+
+# model = load_model()
+# print()
+# print("Model Loaded")
+# print()
+# train_dataset, labeled_train_dataset, test_dataset = load_dataset()
+# features, labels = generate_latent_embeddings(model, test_dataset)
+# reduced_features = reduce_PCA(features)
+# plot_3d(reduced_features, labels)
 
 def visualize_PCA(features: tf.Tensor, labels: tf.Tensor):
     """ Given features and labels, generate and save a scatterplot
@@ -255,3 +305,4 @@ def get_n_colors(n):
 #     plt.scatter(x[labels_idx], y[labels_idx], colors=color_dict[label], label=f'Label {label}')
 
 # print(f'{labels.shape=}')
+
