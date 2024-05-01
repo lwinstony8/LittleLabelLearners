@@ -68,6 +68,7 @@ def visualize_augmentations(num_images, dataset):
                 plt.title(row_titles[row], loc="left")
             plt.axis("off")
     plt.tight_layout()
+    
     plt.savefig('visualize_augmentations.png')
 
 
