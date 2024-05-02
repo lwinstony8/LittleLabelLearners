@@ -60,7 +60,9 @@ train_dataset, labeled_train_dataset, test_dataset = my_dataloader.prepare_datas
 class BaselineModel(keras.Model):
     def __init__(self, train: np.ndarray, test: np.ndarray, 
                  num_classes_range: int | tuple[int, int]=(5, 10), 
-                 split_rate_range: float | tuple[float, float]=(0.5, 0.5)):
+                 split_rate_range: float | tuple[float, float]=(0.5, 0.5),
+                 contrastive_learning_rate_range: float | tuple[float, float]=(0.001,0.001),
+                 probe_learning_rate_range: float | tuple[float, float]=(0.01,0.01)):
         """ Initializer for BaselineModel. Simple CNN with linear classification head
 
         Args:
@@ -74,6 +76,12 @@ class BaselineModel(keras.Model):
         self.split_rate_range= split_rate_range if isinstance(split_rate_range, tuple) else (split_rate_range, split_rate_range)
         self.cur_num_classes = self.num_classes_range[0]
         self.cur_split_rate = self.split_rate_range[0]
+
+        # need to include these so that the baseline can run after doing all the scheduler changes for gradual
+        self.contrastive_learning_rate_range = contrastive_learning_rate_range if isinstance(contrastive_learning_rate_range, tuple) else (contrastive_learning_rate_range, contrastive_learning_rate_range)
+        self.curr_contrastive_learning_rate = self.contrastive_learning_rate_range[1]
+        self.probe_learning_rate_range = probe_learning_rate_range if isinstance(probe_learning_rate_range, tuple) else (probe_learning_rate_range, probe_learning_rate_range)
+        self.curr_probe_learning_rate = self.probe_learning_rate_range[1]
         # self.floor_num_classes = floor_num_classes
         # self.ceiling_num_classes = ceiling_num_classes
         self.dataloader = Dataloader(train,test)
