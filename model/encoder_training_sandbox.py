@@ -25,6 +25,7 @@ import math
 from collections import defaultdict
 
 
+
 # Define the contrastive model with model-subclassing
 class GradualSupervised(keras.Model):
     def __init__(self, train: np.ndarray, test: np.ndarray, 
@@ -97,7 +98,7 @@ class GradualSupervised(keras.Model):
             layers.Input(shape=(hp.width,)),
             layers.Dense(10)],
             name='pseudo_linear_probe')
-
+        
         self.encoder.summary()
         self.projection_head.summary()
         self.linear_probe.summary()
@@ -183,65 +184,15 @@ class GradualSupervised(keras.Model):
                     -   sum
         
         """        
-        
-        # creating pseudolabels for the unlabeled data
 
-        # encoding the labeled and unlabeled separately
-        
-        '''
-        # print(f'{type(labels)}')
-        # print(f'{tf.unique(labels)=}')
-        tf.cast(labels, dtype=tf.float32)
-        # print(f'{labels.shape=}')
-        # for c in tf.unique(labels[:,0]):
-        #     print(f'{c}')
+        with tf.GradientTape(persistent=True) as tape:
+            unlabeled_encodings = self.encoder(unlabeled_images, training=True)
+            labeled_encodings = self.encoder(labeled_images, training=True)
 
-        # class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in tf.unique(labels[:,0])]
-        
-        # print(f'{[print(idx.shape) for idx in class_indices]=}\n')
+            # Q = self.w_Q(labeled_encodings, training=True)
+            # K = self.w_K(unlabeled_encodings, training=True)
+            # V = self.w_V(unlabeled_encodings, training=True)
 
-        classes, _ = tf.unique(tf.squeeze(labels))
-        class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
-        # print(f'{class_indices.numpy()=}')
-        # print(f'{class_indices.shape=}')
-        # print(f'{len(class_indices)=}')
-        # print(f"{[c.shape for c in class_indices]}")
-        # print(f'{class_indices=}')
-        
-
-        # print(f'{labeled_encodings.shape=}')
-        # for indices in class_indices:
-        #     print(f'{indices=}')
-        #     print(f'{type(indices)}')
-        labeled_encodings_by_class = [labeled_encodings.numpy()[indices] for indices in class_indices]
-        # print(f'{[c.shape for c in labeled_encodings_by_class]=}')
-        # print(f'{len(labeled_encodings_by_class)=}')
-        # print(f'{[c.shape for c in labeled_encodings_by_class]=}')
-
-        # (num_unlabeled, 128) @ (128, num_in_class_labeled) for c in classes
-        unlabeled_labeled_dots_by_class = [tf.matmul(unlabeled_encodings, labeled_encodings_class, transpose_b=True)/tf.math.sqrt(hp.width) for labeled_encodings_class in labeled_encodings_by_class]
-        unlabeled_labeled_dots_by_class = [tf.nn.softmax(t, axis=-1) for t in unlabeled_labeled_dots_by_class]
-        print(f'{len(unlabeled_labeled_dots_by_class)=}')
-        attention = tf.convert_to_tensor(unlabeled_labeled_dots_by_class)
-        print(f'{attention.shape=}')
-        
-        print('finished!')
-        exit()
-        '''
-        # print(f'{unlabeled_encodings.shape=}')
-        # print(f'{labeled_encodings.shape=}')
-
-
-        # Q = labeled
-        # K, V = unlabeled
-        # dot product between Q and K
-        # (how well does labeled data relate to unlabeled data)
-
-        #print(f'{labels.shape=}')
-        # labels_onehot = tf.one_hot(labels, 10)
-        with tf.GradientTape() as tape:
-            unlabeled_encodings = self.encoder(unlabeled_images)
-            labeled_encodings = self.encoder(labeled_images)
             attention = tf.matmul(labeled_encodings, unlabeled_encodings, transpose_b=True)/math.sqrt(hp.width)
             attention = tf.nn.softmax(attention)
 
@@ -249,16 +200,27 @@ class GradualSupervised(keras.Model):
             # weigh our unlabeled encodings based on how well it relates
             # using the attention to "label" the 
             #print(f'{attention.shape=}')
+            '''
             weighted_labeled_encodings = tf.matmul(attention, unlabeled_encodings)
             weighted_labeled_encodings = tf.nn.softmax(weighted_labeled_encodings)
 
-            #print(f'{weighted_labeled_encodings.shape=}')
+            print(f'{weighted_labeled_encodings.shape=}')
             
+            output = self.linear_probe(weighted_labeled_encodings, training=True)
+            probe_loss = self.probe_loss(labels, output)
+            encoder_gradients = tape.gradient(probe_loss, self.encoder.trainable_weights)
+            linear_probe_gradients = tape.gradient(probe_loss, self.linear_probe.trainable_weights)
+
+            self.pseudo_optimizer.apply_gradients(zip(encoder_gradients, self.encoder.trainable_weights))
+            self.probe_optimizer.apply_gradients(zip(linear_probe_gradients, self.linear_probe.trainable_weights))
+
+            return output, probe_loss
+            '''
             output = self.pseudo_linear_probe(weighted_labeled_encodings)
             pseudo_loss = self.pseudo_loss(labels, output)
-            gradients = tape.gradient(pseudo_loss, self.encoder.trainable_weights)
-            self.pseudo_optimizer.apply_gradients(zip(gradients, self.encoder.trainable_weights))
-            
+            encoder_gradients = tape.gradient(pseudo_loss, self.encoder.trainable_weights)
+
+            self.pseudo_optimizer.apply_gradients(zip(encoder_gradients, self.encoder.trainable_weights))
             
 
         
@@ -276,7 +238,76 @@ class GradualSupervised(keras.Model):
         a pseudolabel
 
         '''
+    def pad_clusters(self, clusters):
+        acc = []
+        max_size = max(len(c) for c in clusters)
+        # print(f'{max_size=}')
+
+        for c in clusters:
+            # print(f'{c.shape=}')
+            padding_idx = np.random.choice(np.arange(len(c)), size=(max_size - len(c)), replace=True)
+            padding = c[padding_idx]
+            acc.append(np.concatenate([c, padding]))
         
+        # print(f'{[c.shape for c in acc]}')
+        return np.asarray(acc)
+    def pseudo_classified_test(self, unlabeled_images, labeled_images, labels):
+        unlabeled_encodings = self.encoder(unlabeled_images)
+        labeled_encodings = self.encoder(labeled_images)
+
+        # print(f'{type(labels)}')
+        # print(f'{tf.unique(labels)=}')
+        # tf.cast(labels, dtype=tf.float32)
+        # print(f'{labels.shape=}')
+        # for c in tf.unique(labels[:,0]):
+        #     print(f'{c}')
+
+        # class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in tf.unique(labels[:,0])]
+        
+        # print(f'{[print(idx.shape) for idx in class_indices]=}\n')
+
+        classes, _ = tf.unique(tf.squeeze(labels))
+        # print(f'{classes.shape=}')
+        class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
+        # print(f'{class_indices.numpy()=}')
+        # print(f'{class_indices.shape=}')
+        # print(f'{len(class_indices)=}')
+        # print(f"{[c.shape for c in class_indices]}")
+        # print(f'{class_indices=}')
+        
+
+        # print(f'{labeled_encodings.shape=}')
+        # for indices in class_indices:
+        #     print(f'{indices=}')
+        #     print(f'{type(indices)}')
+        labeled_encodings_by_class = [labeled_encodings.numpy()[indices] for indices in class_indices]
+        # print(f'{labeled_encodings.shape=}')
+        # labeled_encodings_by_class = tf.gather(labeled_encodings, _)
+        # print(f'{labeled_encodings_by_class.shape=}')
+        # print(f'{len(labeled_encodings_by_class)=}')
+        # print(f'{[c.shape for c in labeled_encodings_by_class]=}')
+        padded_labeled_encodings_by_class = self.pad_clusters(labeled_encodings_by_class)
+        print(f'{unlabeled_encodings.shape=}')
+        print(f'{padded_labeled_encodings_by_class.shape=}')
+        # unlabeled_labeled_dots_by_class = np.einsum('ij,lji->lij',unlabeled_encodings, padded_labeled_encodings_by_class)
+        unlabeled_labeled_dots_by_class = tf.matmul(unlabeled_encodings, padded_labeled_encodings_by_class, transpose_b=True)
+        print(f'{unlabeled_labeled_dots_by_class.shape=}')
+        averaged = tf.transpose(tf.reduce_mean(unlabeled_labeled_dots_by_class, axis=-1))
+        print(f'{averaged.shape=}')
+        softmaxed = tf.nn.softmax(averaged)
+        pseudo_labeled = tf.argmax(softmaxed, axis=-1)
+        print(f'{pseudo_labeled.shape=}')
+        # print(f'{len(labeled_encodings_by_class)=}')
+
+        # (num_unlabeled, 128) @ (128, num_in_class_labeled) for c in classes
+        # unlabeled_labeled_dots_by_class = [tf.norm(unlabeled_encodings - labeled_encodings_class, ord='euclidean') for labeled_encodings_class in labeled_encodings_by_class]
+        # unlabeled_labeled_dots_by_class = [tf.nn.softmax(t, axis=-1) for t in unlabeled_labeled_dots_by_class]
+        # print(f'{len(unlabeled_labeled_dots_by_class)=}')
+        # attention = tf.convert_to_tensor(unlabeled_labeled_dots_by_class)
+        # print(f'{attention.shape=}')
+        
+        # print('finished!')
+        exit()
 
     def train_step(self, data: tuple[tf.Tensor, tuple[tf.Tensor, tf.Tensor]]) -> dict[str, tf.float32]:
         """ Runs the training routine for a single step; i.e. trains on a single batch
@@ -327,15 +358,16 @@ class GradualSupervised(keras.Model):
         # TODO: New encoder-specific gradient tape training phase
         # Consider: pseudolabels? 
         
-        self.pseudo_classified(unlabeled_images, labeled_images, labels)
+        # class_logits, probe_loss = self.pseudo_classified(unlabeled_images, labeled_images, labels)
 
         # Below becomes linear-probe specific training phase (i.e. self.encoder(training=False))
         ########################################################################
-        # BEGIN SEMI-SUPERVISED PORTION
         # Only labeled images are used WITH LABELS
         preprocessed_images = self.classification_augmenter(
             labeled_images, training=True
         )
+        '''
+        # BEGIN SEMI-SUPERVISED PORTION
 
         # Use linear probe's classification loss to update both ENCODER and LINEAR PROBE
         # Since encoder is being updated with labels, this is SEMI-SUPERIVSED
@@ -350,6 +382,7 @@ class GradualSupervised(keras.Model):
             zip(probe_gradients, self.linear_probe.trainable_weights)
         )
         '''
+        
         # With training encoder
         # NOTE: we didn't actually update encoder LMAO
         with tf.GradientTape(persistent=True) as tape:
@@ -365,7 +398,7 @@ class GradualSupervised(keras.Model):
             zip(encoder_gradients, self.encoder.trainable_weights)
         )
         del tape
-        '''
+        
         self.probe_loss_tracker.update_state(probe_loss)
         self.probe_accuracy.update_state(labels, class_logits)
         # END SEMI-SUPERVISED PORTION
@@ -394,9 +427,9 @@ if __name__ == '__main__':
 
     # Contrastive pretraining
     gradual_supervised_model = GradualSupervised(train, test,
-                                              num_classes_range=(8,10),
-                                              split_rate_range=(0.01, 0.9),
-                                              contrastive_learning_rate_range=(0.001,0.001),
+                                              num_classes_range=10,
+                                              split_rate_range=0.5,
+                                              contrastive_learning_rate_range=0.01,
                                               probe_learning_rate_range=(0.01,0.03))
 
     # setting the unique training rates for each part of the model
@@ -404,7 +437,7 @@ if __name__ == '__main__':
         contrastive_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
         pseudo_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
         probe_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_probe_learning_rate),
-        run_eagerly=True # TODO: REMOVE THIS
+        # run_eagerly=True # TODO: REMOVE THIS
     )
     
     model_history = defaultdict(lambda: [])
