@@ -86,6 +86,8 @@ class BaselineModel(keras.Model):
             self.dataloader.y_test,
             split_rate=self.cur_split_rate)
         
+        
+        
         #define the layers for the model
         self.encoder = keras.Sequential(
         [
