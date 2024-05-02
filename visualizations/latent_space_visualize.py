@@ -12,8 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import tensorflow as tf
 import numpy as np
-#exit()
-#import tensorflow_transform as tft
+
 import keras
 from keras import ops
 from keras import layers
@@ -268,7 +267,7 @@ def main():
     ''' Main method of the file called when th fle s run '''
     # create the model instance and 
     # model = GradualSupervised()
-    model = load_model(model_type='GradualSupervised', weight_path=r'../checkpoints/gradual_supervised_model_49.60.weights.h5')
+    model = load_model(model_type='GradualSupervised', weight_path=r'../checkpoints/gradual_pseudo_supervised_model_46.76.weights.h5')
     print("Model Loaded")
     train_dataset, labeled_train_dataset, test_dataset = load_dataset(model)
     encoded_features, true_labels = generate_latent_embeddings(model, test_dataset)
@@ -277,7 +276,7 @@ def main():
     # test_labels = np.concatenate([y for _, y in test_dataset], axis=0)
     #print(f'{test_labels.shape=}')
     # generate_scores(encoded_features=encoded_features,true_labels=true_labels)
-    # visualize_PCA(encoded_features, true_labels)
+    visualize_PCA(encoded_features, true_labels)
     visualize_UMAP(encoded_features, true_labels)
     # plot_3d(encoded_features, true_labels)
 
