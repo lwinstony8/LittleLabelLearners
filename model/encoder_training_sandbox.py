@@ -121,6 +121,7 @@ class GradualSupervised(keras.Model):
         self.probe_accuracy = keras.metrics.SparseCategoricalAccuracy(name="p_acc")
 
         self.pseudo_loss = keras.losses.SparseCategoricalCrossentropy()
+        self.pseudo_loss_three = tf.keras.losses.SparseCategoricalCrossentropy()
 
 
     @property
@@ -309,6 +310,44 @@ class GradualSupervised(keras.Model):
         # print('finished!')
         exit()
 
+    
+    
+    def pseudo_classified_three(self, unlabeled_images, labeled_images, labels):
+        def distance_handler(unlabeled_encoding):
+            distances = tf.stack([tf.reduce_mean(tf.reduce_sum((tf.broadcast_to(unlabeled_encoding, c.shape) - c) ** 2, axis=1)) for c in labeled_encodings_by_class], axis=0)
+            softmax_distances = tf.nn.softmax(distances)
+            return softmax_distances
+        
+        unlabeled_encodings = self.encoder(unlabeled_images)
+        print(f'{unlabeled_encodings.shape=}') #TensorShape([263, 128])
+        print(f'{labels.shape=}') #[263, 1]
+        classes, idx = tf.unique(tf.squeeze(labels))
+
+        print(f'{classes.shape=}') #[10]
+
+        class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
+        labels_by_class = [labels.numpy()[c_idx] for c_idx in class_indices]
+        labeled_images_by_class = [labeled_images.numpy()[c_idx] for c_idx in class_indices]
+        labeled_encodings_by_class = [self.encoder(c) for c in labeled_images_by_class]
+        unlabeled_labeled_softmaxed_distances = tf.map_fn(distance_handler, unlabeled_encodings)
+        # print(f'{unlabeled_labeled_softmaxed_distances.shape=}') #[263, 10]
+        unlabeled_labeled_weighted_distances = tf.einsum('ij, ik -> kij', unlabeled_encodings, unlabeled_labeled_softmaxed_distances)
+        print(f'{unlabeled_labeled_weighted_distances.shape=}') #[10, 128, 263]; [num_classes, enc_sz, num_unlabeled]
+
+        def distance_handler_labeled_encodings(labeled_encoding):
+            distance = tf.stack([tf.reduce_mean(tf.reduce_sum((tf.broadcast_to(tf.expand_dims(labeled_encoding, axis=0), c.shape) - c) ** 2, axis=-1)) for c in unlabeled_labeled_weighted_distances], axis=0)
+            distance = tf.nn.softmax(distance)
+            return distance
+        
+        for labeled_encodings, class_labels in zip(labeled_encodings_by_class, labels_by_class):
+            print(f'{labeled_encodings.shape=}')
+            pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
+            print(f'{pseudo_predictions.shape=}')
+
+            pseudo_loss = self.pseudo_loss_three(class_labels, pseudo_predictions)
+            print(f'{pseudo_loss=}')
+            break
+        exit()
     def train_step(self, data: tuple[tf.Tensor, tuple[tf.Tensor, tf.Tensor]]) -> dict[str, tf.float32]:
         """ Runs the training routine for a single step; i.e. trains on a single batch
             Training routine consists of two steps:
@@ -359,7 +398,7 @@ class GradualSupervised(keras.Model):
         # Consider: pseudolabels? 
         
         # class_logits, probe_loss = self.pseudo_classified(unlabeled_images, labeled_images, labels)
-
+        self.pseudo_classified_three(unlabeled_images, labeled_images, labels)
         # Below becomes linear-probe specific training phase (i.e. self.encoder(training=False))
         ########################################################################
         # Only labeled images are used WITH LABELS
@@ -437,7 +476,7 @@ if __name__ == '__main__':
         contrastive_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
         pseudo_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
         probe_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_probe_learning_rate),
-        # run_eagerly=True # TODO: REMOVE THIS
+        run_eagerly=True # TODO: REMOVE THIS
     )
     
     model_history = defaultdict(lambda: [])
