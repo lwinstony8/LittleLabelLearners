@@ -121,7 +121,6 @@ class GradualSupervised(keras.Model):
         self.probe_accuracy = keras.metrics.SparseCategoricalAccuracy(name="p_acc")
 
         self.pseudo_loss = keras.losses.SparseCategoricalCrossentropy()
-        self.pseudo_loss_three = tf.keras.losses.SparseCategoricalCrossentropy()
 
 
     @property
@@ -252,6 +251,7 @@ class GradualSupervised(keras.Model):
         
         # print(f'{[c.shape for c in acc]}')
         return np.asarray(acc)
+    
     def pseudo_classified_test(self, unlabeled_images, labeled_images, labels):
         unlabeled_encodings = self.encoder(unlabeled_images)
         labeled_encodings = self.encoder(labeled_images)
@@ -309,45 +309,131 @@ class GradualSupervised(keras.Model):
         
         # print('finished!')
         exit()
-
-    
     
     def pseudo_classified_three(self, unlabeled_images, labeled_images, labels):
-        def distance_handler(unlabeled_encoding):
-            distances = tf.stack([tf.reduce_mean(tf.reduce_sum((tf.broadcast_to(unlabeled_encoding, c.shape) - c) ** 2, axis=1)) for c in labeled_encodings_by_class], axis=0)
-            softmax_distances = tf.nn.softmax(distances)
-            return softmax_distances
+        def distance_handler(unlabeled_encoding, distance_type='dot'):
+            if distance_type=='inv_euc':
+                ## euc_distances
+                distance = tf.stack(
+                    [tf.reduce_mean(
+                        1/tf.reduce_sum(
+                            (tf.broadcast_to(unlabeled_encoding, c.shape) - c) ** 2, axis=1)) for c in labeled_encodings_by_class], axis=0)
+            else: 
+                distances = tf.stack([tf.reduce_mean(
+                    tf.einsum('j, ij->i', unlabeled_encoding, c)) for c in labeled_encodings_by_class])
+            distances = tf.nn.softmax(distances)
+
+            return distances
+        def distance_handler_labeled_encodings(labeled_encoding, distance_type='dot'):
+
+            if distance_type=='inv_euc':
+                distances = tf.stack([tf.reduce_mean(
+                    1/tf.reduce_sum(
+                        (tf.broadcast_to(tf.expand_dims(labeled_encoding, axis=0), c.shape) - c) ** 2, axis=-1)) for c in unlabeled_labeled_weighted_distances], axis=0)
+            else:
+                distances = tf.stack([tf.reduce_mean(
+                    tf.einsum('j, ij->i', labeled_encoding, c)) for c in unlabeled_labeled_weighted_distances])
+            distances = tf.nn.softmax(distances)
+            return distances
         
-        unlabeled_encodings = self.encoder(unlabeled_images)
-        print(f'{unlabeled_encodings.shape=}') #TensorShape([263, 128])
-        print(f'{labels.shape=}') #[263, 1]
-        classes, idx = tf.unique(tf.squeeze(labels))
+        with tf.GradientTape() as tape:
+            unlabeled_encodings = self.encoder(unlabeled_images, training=False)
+            # print(f'{unlabeled_encodings.shape=}') #TensorShape([263, 128])
+            # print(f'{labels.shape=}') #[263, 1]
+            classes, _ = tf.unique(tf.squeeze(labels))
 
-        print(f'{classes.shape=}') #[10]
+            # print(f'{classes.shape=}') #[10]
 
-        class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
-        labels_by_class = [labels.numpy()[c_idx] for c_idx in class_indices]
-        labeled_images_by_class = [labeled_images.numpy()[c_idx] for c_idx in class_indices]
-        labeled_encodings_by_class = [self.encoder(c) for c in labeled_images_by_class]
-        unlabeled_labeled_softmaxed_distances = tf.map_fn(distance_handler, unlabeled_encodings)
-        # print(f'{unlabeled_labeled_softmaxed_distances.shape=}') #[263, 10]
-        unlabeled_labeled_weighted_distances = tf.einsum('ij, ik -> kij', unlabeled_encodings, unlabeled_labeled_softmaxed_distances)
-        print(f'{unlabeled_labeled_weighted_distances.shape=}') #[10, 128, 263]; [num_classes, enc_sz, num_unlabeled]
+            class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
+            labels_by_class = [labels.numpy()[c_idx] for c_idx in class_indices]
+            labeled_images_by_class = [labeled_images.numpy()[c_idx] for c_idx in class_indices]
+            labeled_encodings_by_class = [self.encoder(c, training=True) for c in labeled_images_by_class]
+            unlabeled_labeled_softmaxed_distances = tf.map_fn(distance_handler, unlabeled_encodings)
+            # print(f'{unlabeled_labeled_softmaxed_distances.shape=}') #[263, 10]
+            unlabeled_labeled_weighted_distances = tf.einsum('ij, ik -> kij', unlabeled_encodings, unlabeled_labeled_softmaxed_distances)
+            # print(f'{unlabeled_labeled_weighted_distances.shape=}') #[10, 128, 263]; [num_classes, enc_sz, num_unlabeled]
 
-        def distance_handler_labeled_encodings(labeled_encoding):
-            distance = tf.stack([tf.reduce_mean(tf.reduce_sum((tf.broadcast_to(tf.expand_dims(labeled_encoding, axis=0), c.shape) - c) ** 2, axis=-1)) for c in unlabeled_labeled_weighted_distances], axis=0)
-            distance = tf.nn.softmax(distance)
-            return distance
+            pseudo_loss_acc = 0
+            for labeled_encodings, class_labels in zip(labeled_encodings_by_class, labels_by_class):
+                # print(f'{labeled_encodings.shape=}')
+                pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
+                # print(f'{pseudo_predictions.shape=}')
+
+                pseudo_loss = self.pseudo_loss(class_labels, pseudo_predictions)
+
+                # Class proportion-weighted loss accumulation
+                loss_weight = len(class_labels) / self.cur_num_classes
+                pseudo_loss_acc += loss_weight*pseudo_loss
+                # print(f'{pseudo_loss=}')
+
+        # encoder_gradients = [tape.gradient(pseudo_loss, self.encoder.trainable_weights) for pseudo_loss in pseudo_loss_acc]
+        # for encoder_gradient in encoder_gradients:
+        #     self.pseudo_optimizer.apply_gradients(zip(encoder_gradient, self.encoder.trainable_weights))
+        encoder_gradient = tape.gradient(pseudo_loss_acc, self.encoder.trainable_weights)
+        self.pseudo_optimizer.apply_gradients(zip(encoder_gradient, self.encoder.trainable_weights))
+    
+    def pseudo_classified_four(self, unlabeled_images, labeled_images, labels):
+        with tf.GradientTape(persistent=True) as tape:
+            unlabeled_encodings = self.encoder(unlabeled_images, training=False) #[473, 128]
+            labeled_encodings = self.encoder(labeled_images, training=True) #[52, 128]
+
+            # Similarity between labeled and unlabeled points
+            unlabeled_labeled_dots = tf.einsum('ij, kj -> ik', unlabeled_encodings, labeled_encodings) #[473, 52]
+            # unlabeled_labeled_dots = tf.nn.softmax(unlabeled_labeled_dots) # Is this needed?
+            
+            # Weigh the unlabeled points by the similarity
+            weighted_unlabeled_encodings = tf.einsum('ij, ik -> jik', unlabeled_labeled_dots, unlabeled_encodings) #[52, 473, 128]; [num_labeled, num_unlabeled, enc_sz]
+
+            # For each labeled point, find weighted average to all unlabeled points
+            # This transforms each labeled point into a "meta" point
+            pseudo_predictions = tf.einsum('ijk, ik -> ik', weighted_unlabeled_encodings, labeled_encodings) #[52, 128]
+            pseudo_predictions = self.pseudo_linear_probe(pseudo_predictions, training=True)
+            # pseudo_predictions = self.linear_probe(pseudo_predictions, training=True)
+
+            pseudo_loss = self.pseudo_loss(labels, pseudo_predictions)
+
+        encoder_gradients = tape.gradient(pseudo_loss, self.encoder.trainable_weights)
+        self.contrastive_optimizer.apply_gradients(zip(encoder_gradients, self.encoder.trainable_weights))
         
-        for labeled_encodings, class_labels in zip(labeled_encodings_by_class, labels_by_class):
-            print(f'{labeled_encodings.shape=}')
-            pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
-            print(f'{pseudo_predictions.shape=}')
+        pseudo_linear_probe_gradients = tape.gradient(pseudo_loss, self.pseudo_linear_probe.trainable_weights)
+        self.pseudo_optimizer.apply_gradients(zip(pseudo_linear_probe_gradients, self.pseudo_linear_probe.trainable_weights))
+        # linear_probe_gradients = tape.gradient(pseudo_loss, self.linear_probe.trainable_weights)
+        # self.pseudo_optimizer.apply_gradients(zip(linear_probe_gradients, self.linear_probe_gradients.trainable_weights))
+    
+    def pseudo_classified_five(self, unlabeled_images: tf.Tensor, labeled_images: tf.Tensor):
+        """ An encoder-updating method using cosine-similarities between unlabeled and labeled encodings
+            to create "meta"-labeled points. Minimize the distance between each labeled encoding and its
+            meta variant.
 
-            pseudo_loss = self.pseudo_loss_three(class_labels, pseudo_predictions)
-            print(f'{pseudo_loss=}')
-            break
-        exit()
+            Improves contrastive performance compared to plain GradualSupervised()
+
+        Args:
+            unlabeled_images (tf.Tensor
+            labeled_images (tf.Tensor)
+        """        
+        with tf.GradientTape() as tape:
+
+            # Obtain images' encodings
+            unlabeled_encodings = self.encoder(unlabeled_images, training=False) #[473, 128]
+            labeled_encodings = self.encoder(labeled_images, training=True) #[52, 128]
+
+            # Similarity between labeled and unlabeled points
+            unlabeled_labeled_dots = tf.einsum('ij, kj -> ik', unlabeled_encodings, labeled_encodings) #[473, 52]
+            unlabeled_labeled_dots = tf.nn.softmax(unlabeled_labeled_dots) 
+            
+            # Weigh the unlabeled points by the similarity
+            weighted_unlabeled_encodings = tf.einsum('ij, ik -> jik', unlabeled_labeled_dots, unlabeled_encodings) #[52, 473, 128]; [num_labeled, num_unlabeled, enc_sz]
+
+            # For each labeled point, find weighted average to all unlabeled points
+            # This transforms each labeled point into a "meta" point
+            pseudo_points = tf.einsum('ijk, ik -> ik', weighted_unlabeled_encodings, labeled_encodings) #[52, 128]
+
+            # Find average log euc-distance between each labeled_point and its meta counterpart
+            pseudo_loss = -tf.reduce_mean(tf.math.log(tf.math.sqrt(tf.reduce_sum((pseudo_points-labeled_encodings)**2, axis=-1))))
+
+        encoder_gradients = tape.gradient(pseudo_loss, self.encoder.trainable_weights)
+        self.contrastive_optimizer.apply_gradients(zip(encoder_gradients, self.encoder.trainable_weights))
+
     def train_step(self, data: tuple[tf.Tensor, tuple[tf.Tensor, tf.Tensor]]) -> dict[str, tf.float32]:
         """ Runs the training routine for a single step; i.e. trains on a single batch
             Training routine consists of two steps:
@@ -398,14 +484,16 @@ class GradualSupervised(keras.Model):
         # Consider: pseudolabels? 
         
         # class_logits, probe_loss = self.pseudo_classified(unlabeled_images, labeled_images, labels)
-        self.pseudo_classified_three(unlabeled_images, labeled_images, labels)
+        # self.pseudo_classified_three(unlabeled_images, labeled_images, labels)
+        # self.pseudo_classified_four(unlabeled_images, labeled_images, labels)
+        # self.pseudo_classified_five(unlabeled_images, labeled_images)
         # Below becomes linear-probe specific training phase (i.e. self.encoder(training=False))
         ########################################################################
         # Only labeled images are used WITH LABELS
         preprocessed_images = self.classification_augmenter(
             labeled_images, training=True
         )
-        '''
+        
         # BEGIN SEMI-SUPERVISED PORTION
 
         # Use linear probe's classification loss to update both ENCODER and LINEAR PROBE
@@ -420,8 +508,8 @@ class GradualSupervised(keras.Model):
         self.probe_optimizer.apply_gradients(
             zip(probe_gradients, self.linear_probe.trainable_weights)
         )
-        '''
         
+        '''
         # With training encoder
         # NOTE: we didn't actually update encoder LMAO
         with tf.GradientTape(persistent=True) as tape:
@@ -437,7 +525,7 @@ class GradualSupervised(keras.Model):
             zip(encoder_gradients, self.encoder.trainable_weights)
         )
         del tape
-        
+        '''
         self.probe_loss_tracker.update_state(probe_loss)
         self.probe_accuracy.update_state(labels, class_logits)
         # END SEMI-SUPERVISED PORTION
@@ -467,7 +555,7 @@ if __name__ == '__main__':
     # Contrastive pretraining
     gradual_supervised_model = GradualSupervised(train, test,
                                               num_classes_range=10,
-                                              split_rate_range=0.5,
+                                              split_rate_range=(0.01, 0.9),
                                               contrastive_learning_rate_range=0.01,
                                               probe_learning_rate_range=(0.01,0.03))
 
@@ -476,7 +564,7 @@ if __name__ == '__main__':
         contrastive_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
         pseudo_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_contrastive_learning_rate),
         probe_optimizer=keras.optimizers.Adam(gradual_supervised_model.curr_probe_learning_rate),
-        run_eagerly=True # TODO: REMOVE THIS
+        # run_eagerly=True # TODO: Uncomment if debugging
     )
     
     model_history = defaultdict(lambda: [])
@@ -497,6 +585,6 @@ if __name__ == '__main__':
     )
     title_acc = "{:.2f}".format(max(model_history["val_p_acc"]) * 100)
 
-    os.makedirs(r'../checkpoints', exist_ok=True)
-    gradual_supervised_model.save_weights(f'../checkpoints/gradual_pseudo_supervised_model_{title_acc}.weights.h5')
-    print('Successfully saved model!')
+    # os.makedirs(r'../checkpoints', exist_ok=True)
+    # gradual_supervised_model.save_weights(f'../checkpoints/gradual_pseudo_supervised_model_{title_acc}.weights.h5')
+    # print('Successfully saved model!')
