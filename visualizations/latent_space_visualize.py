@@ -267,7 +267,7 @@ def main():
     ''' Main method of the file called when th fle s run '''
     # create the model instance and 
     # model = GradualSupervised()
-    model = load_model(model_type='GradualSupervised', weight_path=r'../checkpoints/gradual_pseudo_supervised_model_46.76.weights.h5')
+    model = load_model(model_type='GradualSupervised', weight_path=r'../checkpoints/gradual_pseudo_supervised_model_29.11.weights.h5')
     print("Model Loaded")
     train_dataset, labeled_train_dataset, test_dataset = load_dataset(model)
     encoded_features, true_labels = generate_latent_embeddings(model, test_dataset)
