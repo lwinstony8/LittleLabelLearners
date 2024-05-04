@@ -309,19 +309,28 @@ class GradualSupervised(keras.Model):
         
         # print('finished!')
         exit()
-    
     def pseudo_classified_three(self, unlabeled_images, labeled_images, labels):
+        labels = tf.cast(labels, tf.int64)
+        unlabeled_images = tf.cast(unlabeled_images, tf.float32)
+        labeled_images = tf.cast(labeled_images, tf.float32)
         def distance_handler(unlabeled_encoding, distance_type='dot'):
             if distance_type=='inv_euc':
                 ## euc_distances
-                distance = tf.stack(
+                distances = tf.stack(
                     [tf.reduce_mean(
                         1/tf.reduce_sum(
                             (tf.broadcast_to(unlabeled_encoding, c.shape) - c) ** 2, axis=1)) for c in labeled_encodings_by_class], axis=0)
             else: 
-                distances = tf.stack([tf.reduce_mean(
-                    tf.einsum('j, ij->i', unlabeled_encoding, c)) for c in labeled_encodings_by_class])
+                # labeled_encodings_by_class = tf.convert_to_tensor(labeled_encodings_by_class)
+                # distances = tf.stack([tf.reduce_mean(
+                #     tf.einsum('j, ij->i', unlabeled_encoding, c)) for c in labeled_encodings_by_class])
+                # print(f'{labeled_encodings_by_class.shape=}')
+                # print(f"{tf.stack([tf.reduce_sum(tf.einsum('j, ij->i', unlabeled_encoding, c)) for c in tf.unstack(labeled_encodings_by_class)])=}")
+                distances = tf.stack(tf.map_fn(
+                    lambda c: tf.reduce_mean(
+                        tf.einsum('j, ij->i', unlabeled_encoding, c)), labeled_encodings_by_class))
             distances = tf.nn.softmax(distances)
+            # print(f'{distances.shape=}')
 
             return distances
         def distance_handler_labeled_encodings(labeled_encoding, distance_type='dot'):
@@ -331,10 +340,28 @@ class GradualSupervised(keras.Model):
                     1/tf.reduce_sum(
                         (tf.broadcast_to(tf.expand_dims(labeled_encoding, axis=0), c.shape) - c) ** 2, axis=-1)) for c in unlabeled_labeled_weighted_distances], axis=0)
             else:
-                distances = tf.stack([tf.reduce_mean(
-                    tf.einsum('j, ij->i', labeled_encoding, c)) for c in unlabeled_labeled_weighted_distances])
+                # distances = tf.stack([tf.reduce_mean(
+                #     tf.einsum('j, ij->i', labeled_encoding, c)) for c in unlabeled_labeled_weighted_distances])
+                distances = tf.stack(tf.map_fn(lambda c: tf.reduce_mean(
+                    tf.einsum('j, ij->i', labeled_encoding, c)), unlabeled_labeled_weighted_distances))
             distances = tf.nn.softmax(distances)
             return distances
+        def updater(label_tuple):
+                labeled_encodings, class_labels = label_tuple
+                # print(f'{labeled_encodings.shape=}')
+                # print(f'{class_labels.shape=}')
+                pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
+                # print(f'{pseudo_predictions.shape=}')
+
+                # print(f'{tf.reduce_sum(pseudo_predictions)=}')
+                # exit()
+                pseudo_loss = self.pseudo_loss(class_labels, pseudo_predictions)
+                # print(f'{pseudo_loss=}')
+                # exit()
+                # return pseudo_loss
+                # Class proportion-weighted loss accumulation
+                loss_weight = class_labels.shape[0] / self.cur_num_classes
+                return tf.cast(loss_weight, tf.float32)*pseudo_loss
         
         with tf.GradientTape() as tape:
             unlabeled_encodings = self.encoder(unlabeled_images, training=False)
@@ -344,33 +371,130 @@ class GradualSupervised(keras.Model):
 
             # print(f'{classes.shape=}') #[10]
 
-            class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
-            labels_by_class = [labels.numpy()[c_idx] for c_idx in class_indices]
-            labeled_images_by_class = [labeled_images.numpy()[c_idx] for c_idx in class_indices]
-            labeled_encodings_by_class = [self.encoder(c, training=True) for c in labeled_images_by_class]
+            # class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
+            # class_indices = [tf.where(labels==c)[0] for c in classes]
+            class_indices = tf.map_fn(lambda c: tf.where(labels==c)[0], classes)
+            labels_by_class = tf.map_fn(lambda c_idx: tf.gather(labels, c_idx), class_indices)
+            labeled_images_by_class = tf.map_fn(lambda c_idx: tf.gather(labeled_images, c_idx), class_indices, 
+                                                fn_output_signature=tf.float32)
+            labeled_encodings_by_class = tf.map_fn(lambda c: self.encoder(c, training=True), labeled_images_by_class)
             unlabeled_labeled_softmaxed_distances = tf.map_fn(distance_handler, unlabeled_encodings)
             # print(f'{unlabeled_labeled_softmaxed_distances.shape=}') #[263, 10]
             unlabeled_labeled_weighted_distances = tf.einsum('ij, ik -> kij', unlabeled_encodings, unlabeled_labeled_softmaxed_distances)
             # print(f'{unlabeled_labeled_weighted_distances.shape=}') #[10, 128, 263]; [num_classes, enc_sz, num_unlabeled]
 
-            pseudo_loss_acc = 0
-            for labeled_encodings, class_labels in zip(labeled_encodings_by_class, labels_by_class):
-                # print(f'{labeled_encodings.shape=}')
-                pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
-                # print(f'{pseudo_predictions.shape=}')
+            # pseudo_loss_acc = 0
+            # for labeled_encodings, class_labels in zip(labeled_encodings_by_class, labels_by_class):
+            #     # print(f'{labeled_encodings.shape=}')
+            #     pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
+            #     # print(f'{pseudo_predictions.shape=}')
 
-                pseudo_loss = self.pseudo_loss(class_labels, pseudo_predictions)
+            #     pseudo_loss = self.pseudo_loss(class_labels, pseudo_predictions)
 
-                # Class proportion-weighted loss accumulation
-                loss_weight = len(class_labels) / self.cur_num_classes
-                pseudo_loss_acc += loss_weight*pseudo_loss
-                # print(f'{pseudo_loss=}')
+            #     # Class proportion-weighted loss accumulation
+            #     loss_weight = len(class_labels) / self.cur_num_classes
+            #     pseudo_loss_acc += loss_weight*pseudo_loss
+            #     # print(f'{pseudo_loss=}')
+
+            pseudo_loss_acc = tf.map_fn(updater, (labeled_encodings_by_class, labels_by_class), fn_output_signature=tf.float32)
+            pseudo_loss_acc = tf.reduce_sum(pseudo_loss_acc)
 
         # encoder_gradients = [tape.gradient(pseudo_loss, self.encoder.trainable_weights) for pseudo_loss in pseudo_loss_acc]
         # for encoder_gradient in encoder_gradients:
         #     self.pseudo_optimizer.apply_gradients(zip(encoder_gradient, self.encoder.trainable_weights))
         encoder_gradient = tape.gradient(pseudo_loss_acc, self.encoder.trainable_weights)
+        self.pseudo_optimizer.apply_gradients(zip(encoder_gradient, self.encoder.trainable_weights)) 
+    def pseudo_classified_three_point_five(self, unlabeled_images, labeled_images, labels):
+        def distance_handler(unlabeled_encoding, distance_type='dot'):
+            if distance_type=='inv_euc':
+                ## euc_distances
+                distances = tf.stack(
+                    [tf.reduce_mean(
+                        1/tf.reduce_sum(
+                            (tf.broadcast_to(unlabeled_encoding, c.shape) - c) ** 2, axis=1)) for c in labeled_encodings_by_class], axis=0)
+            else: 
+                # distances = tf.stack([tf.reduce_mean(
+                #     tf.einsum('j, ij->i', unlabeled_encoding, c)) for c in labeled_encodings_by_class])
+                # print(f'{labeled_encodings_by_class.shape=}')
+                distances = tf.stack(tf.map_fn(lambda c: tf.reduce_mean(
+                    tf.einsum('j, ij->i', unlabeled_encoding, c)), labeled_encodings_by_class))
+            distances = tf.nn.softmax(distances)
+            # print(f'{distances.shape=}')
+
+            return distances
+        def distance_handler_labeled_encodings(labeled_encoding, distance_type='dot'):
+
+            if distance_type=='inv_euc':
+                distances = tf.stack([tf.reduce_mean(
+                    1/tf.reduce_sum(
+                        (tf.broadcast_to(tf.expand_dims(labeled_encoding, axis=0), c.shape) - c) ** 2, axis=-1)) for c in unlabeled_labeled_weighted_distances], axis=0)
+            else:
+                # distances = tf.stack([tf.reduce_mean(
+                #     tf.einsum('j, ij->i', labeled_encoding, c)) for c in unlabeled_labeled_weighted_distances])
+                distances = tf.stack(tf.map_fn(lambda c: tf.reduce_mean(
+                    tf.einsum('j, ij->i', labeled_encoding, c)), unlabeled_labeled_weighted_distances))
+            distances = tf.nn.softmax(distances)
+            return distances
+        def updater(label_tuple):
+                labeled_encodings, class_labels = label_tuple
+                # print(f'{labeled_encodings.shape=}')
+                # print(f'{class_labels.shape=}')
+                pseudo_predictions = tf.map_fn(distance_handler_labeled_encodings, labeled_encodings)
+                # print(f'{pseudo_predictions.shape=}')
+
+                # print(f'{tf.reduce_sum(pseudo_predictions)=}')
+                # exit()
+                pseudo_loss = self.pseudo_loss(class_labels, pseudo_predictions)
+                # print(f'{pseudo_loss=}')
+                # exit()
+                return pseudo_loss
+                # Class proportion-weighted loss accumulation
+                # loss_weight = len(class_labels) / self.cur_num_classes
+                # return tf.cast(loss_weight, tf.float32)*pseudo_loss
+        
+        unlabeled_images = tf.cast(unlabeled_images, tf.float32)        
+        labeled_images = tf.cast(labeled_images, tf.float32)
+        with tf.GradientTape() as tape:
+            unlabeled_encodings = self.encoder(unlabeled_images, training=True)
+            # print(f'{unlabeled_encodings.shape=}') #TensorShape([263, 128])
+            # print(f'{labels.shape=}') #[263, 1]
+            labels = tf.cast(labels, tf.int64)
+            classes, _ = tf.unique(tf.squeeze(labels))
+
+            # print(f'{classes.shape=}') #[10]
+            # class_indices = [tf.experimental.numpy.nonzero(labels==c)[0] for c in classes]
+            class_indices = tf.map_fn(lambda c: tf.experimental.numpy.nonzero(labels==c)[0], classes)
+            labels_by_class = tf.map_fn(lambda c_idx: tf.gather(labels, c_idx), class_indices)
+            labeled_images_by_class = tf.map_fn(lambda c_idx: tf.gather(labeled_images, c_idx), class_indices, 
+                                                fn_output_signature=tf.float32)
+            # print(f'{labeled_images_by_class.dtype=}')
+            # exit()
+            labeled_encodings_by_class = tf.map_fn(lambda c: self.encoder(c, training=True), labeled_images_by_class)
+            # print(f'{labeled_encodings_by_class.dtype}')
+            # exit()
+            unlabeled_labeled_softmaxed_distances = tf.map_fn(distance_handler, unlabeled_encodings)
+            # print(f'{unlabeled_labeled_softmaxed_distances.shape=}') #[263, 10]
+            unlabeled_labeled_weighted_distances = tf.einsum('ij, ik -> kij', unlabeled_encodings, unlabeled_labeled_softmaxed_distances)
+            # print(f'{unlabeled_labeled_weighted_distances.shape=}') #[10, 128, 263]; [num_classes, enc_sz, num_unlabeled]
+            # print(f'{unlabeled_labeled_weighted_distances=}')
+            # exit()
+
+            
+            pseudo_loss_acc = tf.map_fn(updater, (labeled_encodings_by_class, labels_by_class), fn_output_signature=tf.float32)
+            pseudo_loss_acc = tf.reduce_sum(pseudo_loss_acc)
+            # print(f'{pseudo_loss_acc.shape=}')
+            # exit()
+
+            encoder_gradient = tape.gradient(pseudo_loss_acc, self.encoder.trainable_weights)
         self.pseudo_optimizer.apply_gradients(zip(encoder_gradient, self.encoder.trainable_weights))
+        # for l in pseudo_loss_acc:
+        #     grad = tape.gradient(l, self.encoder.trainable_weights)
+        #     print(f'{grad=}')
+        # encoder_gradients = tf.map_fn(lambda l: tape.gradient(l, self.encoder.trainable_weights), pseudo_loss_acc, fn_output_signature=list)
+        # tf.map_fn(lambda g: self.pseudo_optimizer.apply_gradients(g), (encoder_gradients, self.encoder.trainable_weights))
+        # exit()
+        # print(f'{pseudo_loss_acc.shape=}')
+        # print(f'{len(self.encoder.trainable_weights)=}')
     
     def pseudo_classified_four(self, unlabeled_images, labeled_images, labels):
         with tf.GradientTape(persistent=True) as tape:
@@ -410,7 +534,8 @@ class GradualSupervised(keras.Model):
         Args:
             unlabeled_images (tf.Tensor
             labeled_images (tf.Tensor)
-        """        
+        """
+        
         with tf.GradientTape() as tape:
 
             # Obtain images' encodings
@@ -484,7 +609,7 @@ class GradualSupervised(keras.Model):
         # Consider: pseudolabels? 
         
         # class_logits, probe_loss = self.pseudo_classified(unlabeled_images, labeled_images, labels)
-        # self.pseudo_classified_three(unlabeled_images, labeled_images, labels)
+        self.pseudo_classified_three(unlabeled_images, labeled_images, labels)
         # self.pseudo_classified_four(unlabeled_images, labeled_images, labels)
         # self.pseudo_classified_five(unlabeled_images, labeled_images)
         # Below becomes linear-probe specific training phase (i.e. self.encoder(training=False))
