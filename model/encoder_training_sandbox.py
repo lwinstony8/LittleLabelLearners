@@ -437,7 +437,7 @@ class GradualSupervised(keras.Model):
             pseudo_loss = self.pseudo_loss(class_labels, pseudo_predictions)
 
             # Weigh pseudo_loss by class representation proportion
-            loss_weight = class_labels.shape[0] / self.cur_num_classes
+            loss_weight = class_labels.shape[0] / labels.shape[0]
             return tf.cast(loss_weight, tf.float32)*pseudo_loss
         
         # Cast all inputs; otherwise, tf.map_fn will throw a fit
@@ -479,8 +479,7 @@ class GradualSupervised(keras.Model):
             is used to update encoder AND pseudo_linear_probe
 
             Essentially, we first find the similarity between unlabeled and labeled points. Then, we generate "meta" points by finding similarity of
-            labeled points and unlabeled points, weighted by unlabeled points' similarities. We can think of this as labeled points 
-            under gravitational pull of unlabeled points, whose pull is weighted by unlabeled points' similarities.
+            labeled points and unlabeled points, weighted by unlabeled points' similarities. 
 
             Introduces new parameters to model; not recommended. Instead, consider meta_classifier_distance
 
